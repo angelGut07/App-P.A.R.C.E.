@@ -1,0 +1,160 @@
+@import 'leaflet/dist/leaflet.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-anthracite-800;
+  }
+
+  body {
+    @apply bg-dark-950 text-gray-100 antialiased;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-gold-600 to-gold-500 text-anthracite-950 font-semibold rounded-lg shadow-lg hover:shadow-glow-gold transition-all duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gold-500 focus:ring-offset-2 focus:ring-offset-dark-950 text-sm sm:text-base;
+  }
+
+  .btn-secondary {
+    @apply px-4 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-anthracite-700 to-anthracite-600 text-white font-semibold rounded-lg shadow-lg hover:shadow-glow-anthracite transition-all duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-anthracite-500 focus:ring-offset-2 focus:ring-offset-dark-950 text-sm sm:text-base;
+  }
+
+  .btn-outline {
+    @apply px-4 sm:px-6 py-2 sm:py-3 border-2 border-gold-500 text-gold-400 font-semibold rounded-lg hover:bg-gold-500 hover:text-anthracite-950 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-gold-500 focus:ring-offset-2 focus:ring-offset-dark-950 text-sm sm:text-base;
+  }
+
+  .card {
+    @apply bg-anthracite-900/50 backdrop-blur-sm border border-anthracite-800 rounded-xl shadow-card hover:shadow-card-hover transition-all duration-300;
+  }
+
+  .input-field {
+    @apply w-full px-3 sm:px-4 py-2 sm:py-3 bg-anthracite-800/50 border border-anthracite-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gold-500 focus:border-transparent transition-all duration-300 text-sm sm:text-base;
+  }
+
+  .sidebar-link {
+    @apply flex items-center gap-3 px-4 py-3 text-gray-400 hover:text-white hover:bg-anthracite-800/50 rounded-lg transition-all duration-300 cursor-pointer text-sm sm:text-base;
+  }
+
+  .sidebar-link-active {
+    @apply flex items-center gap-3 px-4 py-3 text-white bg-gradient-to-r from-gold-600/20 to-anthracite-600/20 border-l-4 border-gold-500 rounded-lg text-sm sm:text-base;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-gradient-to-r from-gold-400 to-gold-600 bg-clip-text text-transparent;
+  }
+
+  .bg-glass {
+    @apply bg-anthracite-900/30 backdrop-blur-md border border-anthracite-800/50;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Leaflet Dark Theme Customization */
+.leaflet-container {
+  background: #0f1115;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.leaflet-popup-content-wrapper {
+  background: #171a21;
+  color: #e6e8eb;
+  border: 1px solid #232732;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.leaflet-popup-tip {
+  background: #171a21;
+  border: 1px solid #232732;
+}
+
+.leaflet-popup-close-button {
+  color: #8b93a1 !important;
+}
+
+.leaflet-popup-close-button:hover {
+  color: #e6e8eb !important;
+}
+
+.leaflet-control-zoom a {
+  background: #171a21 !important;
+  color: #e6e8eb !important;
+  border: 1px solid #232732 !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background: #1d212b !important;
+  border-color: #60a5fa !important;
+}
+
+.leaflet-control-attribution {
+  background: rgba(23, 26, 33, 0.8) !important;
+  color: #8b93a1 !important;
+  border-radius: 4px !important;
+  font-size: 10px !important;
+}
+
+.leaflet-control-attribution a {
+  color: #60a5fa !important;
+}
+
+/* Responsive improvements for mobile devices */
+@media (max-width: 640px) {
+  /* Better touch targets for mobile */
+  button, a[role="button"] {
+    @apply min-h-[44px] min-w-[44px];
+  }
+
+  /* Improve text readability on small screens */
+  body {
+    @apply text-sm;
+  }
+
+  /* Better spacing on mobile */
+  .container {
+    @apply px-4;
+  }
+
+  /* Prevent overflow on mobile */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Landscape orientation specific */
+@media (max-width: 768px) and (orientation: landscape) {
+  /* Reduce padding for landscape phones */
+  main {
+    @apply py-2;
+  }
+
+  /* Reduce spacing in grids on landscape */
+  .grid {
+    @apply gap-2 sm:gap-4;
+  }
+}
+
+/* Large screens optimization */
+@media (min-width: 1920px) {
+  .max-w-7xl {
+    @apply max-w-6xl;
+  }
+}

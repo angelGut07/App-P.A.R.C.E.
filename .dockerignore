@@ -1,0 +1,9 @@
+.git
+.github
+.env
+.phpunit.cache
+vendor
+storage
+public/uploads
+frontend/node_modules
+frontend/dist

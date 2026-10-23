@@ -1,0 +1,4 @@
+# Finales de línea LF en el repositorio (los scripts de Docker deben tener LF)
+* text=auto eol=lf
+*.png binary
+*.jpg binary

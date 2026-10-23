@@ -1,0 +1,110 @@
+#!/usr/bin/env php
+<?php
+/**
+ * Consola de P.A.R.C.E
+ *
+ *   php bin/parce migrate                 Ejecuta las migraciones pendientes
+ *   php bin/parce rollback [pasos]        Revierte el último lote (o N lotes)
+ *   php bin/parce status                  Estado de las migraciones
+ *   php bin/parce seed                    Carga los datos de demostración
+ *   php bin/parce fresh                   Revierte todo, migra y siembra (solo local)
+ *   php bin/parce expire-requests [min]   Expira solicitudes pendientes sin atender (por defecto 30 min)
+ *   php bin/parce cleanup-sessions        Borra sesiones vencidas
+ *   php bin/parce cleanup-logs [días]     Borra logs más antiguos que N días (por defecto 30)
+ */
+
+define('BASE_PATH', dirname(__DIR__));
+
+require_once BASE_PATH . '/vendor/autoload.php';
+
+use App\Core\Database;
+use App\Core\EnvLoader;
+use App\Core\MigrationRunner;
+use App\Models\Auth\SessionManager;
+
+EnvLoader::load(BASE_PATH . '/.env');
+
+Database::setConfig([
+    'driver'   => $_ENV['DB_CONNECTION'] ?? 'mysql',
+    'host'     => $_ENV['DB_HOST'] ?? '127.0.0.1',
+    'port'     => (int)($_ENV['DB_PORT'] ?? 3306),
+    'database' => $_ENV['DB_DATABASE'] ?? 'parce',
+    'username' => $_ENV['DB_USERNAME'] ?? 'root',
+    'password' => $_ENV['DB_PASSWORD'] ?? '',
+    'charset'  => 'utf8mb4',
+    'ssl_ca'   => $_ENV['DB_SSL_CA'] ?? null,
+]);
+
+$command = $argv[1] ?? 'help';
+$arg = $argv[2] ?? null;
+$runner = fn() => new MigrationRunner(BASE_PATH . '/database/migrations');
+$print = fn(array $lines) => array_map(fn($line) => print($line . PHP_EOL), $lines);
+
+$seed = function (): void {
+    require_once BASE_PATH . '/database/seeders/DatabaseSeeder.php';
+    (new DatabaseSeeder())->run();
+};
+
+try {
+    switch ($command) {
+        case 'migrate':
+            $print($runner()->migrate());
+            break;
+
+        case 'rollback':
+            $print($runner()->rollback(max(1, (int)($arg ?? 1))));
+            break;
+
+        case 'status':
+            foreach ($runner()->status() as $item) {
+                printf("%-10s %s\n", $item['ran'] ? '[OK]' : '[PENDIENTE]', $item['migration']);
+            }
+            break;
+
+        case 'seed':
+            $seed();
+            break;
+
+        case 'fresh':
+            if (($_ENV['APP_ENV'] ?? 'local') === 'production') {
+                throw new RuntimeException('fresh borra todos los datos: no se permite con APP_ENV=production');
+            }
+            $print($runner()->reset());
+            $seed();
+            break;
+
+        case 'expire-requests':
+            $minutes = max(1, (int)($arg ?? 30));
+            $expired = Database::update(
+                'service_requests',
+                ['status' => 'expired', 'expired_at' => date('Y-m-d H:i:s')],
+                'status = ? AND requested_at < (NOW() - INTERVAL ? MINUTE)',
+                ['pending', $minutes]
+            );
+            echo date('Y-m-d H:i:s') . " — {$expired} solicitud(es) pendiente(s) expirada(s) (más de {$minutes} min).\n";
+            break;
+
+        case 'cleanup-sessions':
+            $deleted = (new SessionManager())->cleanup();
+            echo date('Y-m-d H:i:s') . " — {$deleted} sesión(es) vencida(s) eliminada(s).\n";
+            break;
+
+        case 'cleanup-logs':
+            $cutoff = time() - max(1, (int)($arg ?? 30)) * 86400;
+            $deleted = 0;
+            foreach (glob(BASE_PATH . '/storage/logs/*.log') ?: [] as $file) {
+                if (filemtime($file) < $cutoff && unlink($file)) {
+                    $deleted++;
+                }
+            }
+            echo date('Y-m-d H:i:s') . " — {$deleted} archivo(s) de log eliminado(s).\n";
+            break;
+
+        default:
+            $lines = file(__FILE__);
+            echo implode('', array_slice($lines, 3, 10));
+    }
+} catch (Throwable $e) {
+    fwrite(STDERR, 'Error: ' . $e->getMessage() . PHP_EOL);
+    exit(1);
+}

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Suite de integración (opcional). No la usan `composer test` ni el CI,
+    que corren solo la suite "Unit" sin base de datos. Requiere la base de
+    datos "parce_test" migrada (ver README, sección Pruebas).
+
+    Ejecutar manualmente con:
+        vendor/bin/phpunit -c phpunit.integration.xml
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/Integration/bootstrap.php"
+         colors="true"
+         cacheDirectory=".phpunit.cache/integration">
+    <testsuites>
+        <testsuite name="Integration">
+            <directory>tests/Integration</directory>
+            <exclude>tests/Integration/scripts</exclude>
+        </testsuite>
+    </testsuites>
+</phpunit>

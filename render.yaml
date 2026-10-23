@@ -1,0 +1,40 @@
+# Blueprint de Render: https://render.com/docs/blueprint-spec
+# Un solo servicio web (Docker) sirve la API y el frontend en el mismo dominio.
+# La base de datos MySQL es externa (Render solo ofrece PostgreSQL gestionado):
+# por ejemplo Aiven for MySQL, TiDB Cloud o Railway. Los valores marcados con
+# sync: false se escriben en el panel de Render y nunca en este archivo.
+services:
+  - type: web
+    name: parce
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_URL              # https://parce.onrender.com (la URL que asigne Render)
+        sync: false
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_DATABASE
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_SSL_CA            # ruta del certificado CA si el proveedor exige TLS, p. ej. /etc/ssl/certs/ca-certificates.crt
+        sync: false
+      - key: RESEND_API_KEY       # correos de recuperación de contraseña
+        sync: false
+      - key: MAIL_FROM            # remitente verificado en Resend
+        sync: false
+      - key: GROQ_API_KEY         # asistente de diagnóstico
+        sync: false
+      - key: RUN_MIGRATIONS
+        value: "true"
+      - key: SEED_DEMO            # "true" solo en un entorno de pruebas
+        value: "false"
