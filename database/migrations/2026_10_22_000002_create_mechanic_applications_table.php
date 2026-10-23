@@ -34,7 +34,7 @@ class CreateMechanicApplicationsTable extends Migration
                 INDEX idx_mechanic_applications_user (user_id),
                 INDEX idx_mechanic_applications_status (status, created_at),
                 CONSTRAINT fk_mechanic_applications_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                CONSTRAINT fk_mechanic_applications_reviewer FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL,
+                CONSTRAINT fk_mechanic_applications_reviewer FOREIGN KEY (reviewed_by) REFERENCES users(id),
                 CONSTRAINT chk_mechanic_applications_review CHECK (
                     status IN ('pending', 'cancelled') OR (reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL)
                 ),

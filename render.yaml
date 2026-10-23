@@ -26,7 +26,7 @@ services:
         sync: false
       - key: DB_PASSWORD
         sync: false
-      - key: DB_SSL_CA            # ruta del certificado CA si el proveedor exige TLS, p. ej. /etc/ssl/certs/ca-certificates.crt
+      - key: DB_SSL_CA_PEM        # contenido completo del certificado CA del proveedor (ca.pem de Aiven)
         sync: false
       - key: RESEND_API_KEY       # correos de recuperación de contraseña
         sync: false

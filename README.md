@@ -108,7 +108,7 @@ El CI de GitHub Actions (`.github/workflows/ci.yml`) corre la suite unitaria y e
 
 La aplicación se despliega como **un solo servicio web Docker**: Apache sirve el frontend compilado y redirige `/api` al backend PHP, en el mismo dominio. Así la cookie de sesión es de primera parte y no hace falta configurar CORS.
 
-1. **Base de datos.** Render solo ofrece PostgreSQL gestionado, así que crea una base MySQL externa, por ejemplo [Aiven for MySQL](https://aiven.io/mysql) (plan gratuito), TiDB Cloud o Railway. Anota host, puerto, base, usuario y contraseña. Si el proveedor exige TLS, usa `DB_SSL_CA=/etc/ssl/certs/ca-certificates.crt`.
+1. **Base de datos.** Render solo ofrece PostgreSQL gestionado, así que crea una base MySQL externa, por ejemplo [Aiven for MySQL](https://aiven.io/mysql) (plan gratuito), TiDB Cloud o Railway. Anota host, puerto, base, usuario y contraseña. Si el proveedor exige TLS con su propia CA (Aiven lo hace), pega el contenido de su `ca.pem` en la variable `DB_SSL_CA_PEM`.
 2. **Servicio.** En Render: *New → Blueprint*, elige este repositorio y Render leerá `render.yaml`.
 3. **Variables.** Completa en el panel las marcadas como secretas: `APP_URL` (la URL `https://...onrender.com` que asigne Render), `DB_*`, y opcionalmente `RESEND_API_KEY`, `MAIL_FROM` y `GROQ_API_KEY`. Para un entorno de pruebas puedes poner `SEED_DEMO=true` en el primer despliegue.
 4. Cada despliegue aplica las migraciones pendientes al arrancar (`RUN_MIGRATIONS=true`).

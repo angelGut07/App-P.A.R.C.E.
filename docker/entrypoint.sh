@@ -7,6 +7,13 @@ if [ -n "$PORT" ]; then
     sed -i "s/<VirtualHost \*:80>/<VirtualHost *:${PORT}>/" /etc/apache2/sites-available/000-default.conf
 fi
 
+# Certificado CA de la base de datos gestionada (p. ej. el ca.pem de Aiven)
+# pegado como variable de entorno: se guarda en un archivo y se usa para TLS.
+if [ -n "$DB_SSL_CA_PEM" ]; then
+    printf '%s\n' "$DB_SSL_CA_PEM" > /etc/ssl/certs/db-ca.pem
+    export DB_SSL_CA=/etc/ssl/certs/db-ca.pem
+fi
+
 # Migraciones pendientes en cada arranque (idempotente)
 if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
     php bin/parce migrate

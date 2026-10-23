@@ -235,7 +235,7 @@ class InventoryService
              JOIN suppliers s ON s.id = r.supplier_id
              JOIN users u ON u.id = r.registered_by
              LEFT JOIN merchandise_receipt_items i ON i.receipt_id = r.id
-             GROUP BY r.id
+             GROUP BY r.id, s.id, s.name, u.first_name, u.last_name
              ORDER BY r.received_on DESC, r.id DESC
              LIMIT ' . max(0, $limit) . ' OFFSET ' . max(0, $offset)
         );
