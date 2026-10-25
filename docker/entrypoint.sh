@@ -24,4 +24,8 @@ if [ "${SEED_DEMO:-false}" = "true" ]; then
     php bin/parce seed
 fi
 
+# Los comandos anteriores corren como root y pueden crear logs: Apache
+# (www-data) debe poder seguir escribiendo en storage/ y en las cargas.
+chown -R www-data:www-data storage public/uploads
+
 exec "$@"

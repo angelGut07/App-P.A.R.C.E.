@@ -121,6 +121,12 @@ class App
 
         // Manejador de errores — convierte errores en excepciones
         set_error_handler(function ($severity, $message, $file, $line) {
+            // Respeta el operador @ y error_reporting(): un aviso silenciado a
+            // propósito (p. ej. no poder escribir un archivo de log) no debe
+            // convertirse en una excepción que tumbe la petición.
+            if (!(error_reporting() & $severity)) {
+                return false;
+            }
             throw new \ErrorException($message, 0, $severity, $file, $line);
         });
 
