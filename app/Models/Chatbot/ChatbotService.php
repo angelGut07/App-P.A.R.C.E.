@@ -14,7 +14,8 @@ use App\Core\DomainException;
 class ChatbotService
 {
     private const API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-    private const MODEL = 'llama-3.1-8b-instant';
+    /** Modelo por defecto; se puede cambiar con GROQ_MODEL sin tocar código. */
+    private const DEFAULT_MODEL = 'llama-3.1-8b-instant';
     private const MAX_MESSAGES = 20;
     private const MAX_CONTENT_LENGTH = 1000;
 
@@ -75,7 +76,7 @@ PROMPT;
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST           => true,
             CURLOPT_POSTFIELDS     => json_encode([
-                'model'       => self::MODEL,
+                'model'       => $_ENV['GROQ_MODEL'] ?? self::DEFAULT_MODEL,
                 'messages'    => array_merge([['role' => 'system', 'content' => self::SYSTEM_PROMPT]], $history),
                 'temperature' => 0.4,
                 'max_tokens'  => 400,
