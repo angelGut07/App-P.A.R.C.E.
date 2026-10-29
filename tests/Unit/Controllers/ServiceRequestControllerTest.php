@@ -153,6 +153,29 @@ class ServiceRequestControllerTest extends TestCase
         $this->assertSame('SR-2026-000005', $body['data']['serviceRequest']['serviceCode']);
     }
 
+    public function testShowHidesFromTheRateeTheIndividualRatingTheyReceived(): void
+    {
+        $rated = ['status' => 'completed', 'customer_rating' => 2, 'customer_feedback' => 'Llegó tarde',
+                  'mechanic_rating_score' => 4, 'mechanic_rating_comment' => 'Muy amable'];
+        $this->expectQueries([
+            $this->stepFetchOne($this->requestRow($rated)),
+            $this->stepFetchOne($this->requestRow($rated)),
+        ]);
+
+        $asMechanic = $this->responseBody($this->controller->show(
+            $this->makeRequest('GET', attributes: ['userId' => 42, 'userRole' => 'mechanic']), 5
+        ))['data']['serviceRequest'];
+        $asCustomer = $this->responseBody($this->controller->show(
+            $this->makeRequest('GET', attributes: ['userId' => 1, 'userRole' => 'customer']), 5
+        ))['data']['serviceRequest'];
+
+        $this->assertArrayNotHasKey('customerRating', $asMechanic);
+        $this->assertArrayNotHasKey('customerFeedback', $asMechanic);
+        $this->assertSame(4, $asMechanic['mechanicRatingScore']);
+        $this->assertArrayNotHasKey('mechanicRatingScore', $asCustomer);
+        $this->assertSame(2, $asCustomer['customerRating']);
+    }
+
     public function testShowReturns404WhenTheRequestDoesNotExistOrIsNotAccessible(): void
     {
         $this->expectQueries([

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { MapPin, Clock, Navigation, AlertTriangle, CheckCircle, Car, ToggleLeft, ToggleRight, Receipt, ClipboardList } from 'lucide-react';
+import { MapPin, Clock, Navigation, AlertTriangle, Car, ToggleLeft, ToggleRight, Receipt, ClipboardList } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import ActiveOrder from '../components/mechanic/ActiveOrder';
@@ -183,7 +183,6 @@ export default function MechanicOrdersPage() {
                       {r.status === 'completed' && (
                         <>
                           <span className="text-sm text-gold-400">{formatCOP(r.finalCost)}</span>
-                          {r.customerRating != null && <span className="text-xs text-yellow-400 flex items-center gap-1"><CheckCircle className="w-3 h-3" /> {r.customerRating}★</span>}
                           <Link to={`/payment/receipt?request=${r.id}`} className="text-gray-400 hover:text-white" title="Comprobante"><Receipt className="w-4 h-4" /></Link>
                         </>
                       )}

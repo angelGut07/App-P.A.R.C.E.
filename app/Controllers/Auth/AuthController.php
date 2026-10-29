@@ -376,6 +376,23 @@ class AuthController extends Controller
     }
 
     /**
+     * Promedio y cantidad de calificaciones recibidas en un rol.
+     *
+     * @param array  $userData Fila de getUserProfileData()
+     * @param string $prefix   'customer' o 'mechanic'
+     * @return array{average: float|null, count: int}
+     */
+    private static function ratingAverage(array $userData, string $prefix): array
+    {
+        $average = $userData["{$prefix}_rating_average"] ?? null;
+
+        return [
+            'average' => $average !== null ? (float)$average : null,
+            'count'   => (int)($userData["{$prefix}_rating_count"] ?? 0),
+        ];
+    }
+
+    /**
      * Construye el perfil completo de un usuario (mismos campos que GET /api/auth/me).
      *
      * Usado por register(), login() y me() para que los tres endpoints devuelvan
@@ -428,6 +445,11 @@ class AuthController extends Controller
             'lastLoginAt'         => $userData['last_login_at'],
             'roles'               => $roles,
             'driverLicense'       => $driverLicense,
+            // Solo promedios: las calificaciones individuales no se muestran al calificado
+            'ratingSummary'       => [
+                'asCustomer' => self::ratingAverage($userData, 'customer'),
+                'asMechanic' => self::ratingAverage($userData, 'mechanic'),
+            ],
             'mechanicProfile'     => in_array('mechanic', $roles, true) ? $applications->getApprovedProfile($userId) : null,
             'mechanicApplication' => $latestApplication !== null ? [
                 'id'          => (int)$latestApplication['id'],

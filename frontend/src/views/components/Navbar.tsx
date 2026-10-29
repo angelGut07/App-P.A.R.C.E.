@@ -3,7 +3,7 @@ import { useState } from 'react';
 // Importa Link para navegación sin recargar página, useNavigate para navegación programática
 import { Link, useNavigate } from 'react-router-dom';
 // Importa iconos de menú, cierre, usuario y logout de lucide-react
-import { Menu, X, User, LogOut } from 'lucide-react';
+import { Menu, X, User, LogOut, History, ClipboardList, MessageSquare } from 'lucide-react';
 // Importa motion para animaciones y AnimatePresence para animar entrada/salida de elementos
 import { motion, AnimatePresence } from 'framer-motion';
 // Importa el hook de autenticación para acceder al usuario actual y función de logout
@@ -55,6 +55,20 @@ export default function Navbar({ isAuthenticated = false, userName, userAvatar, 
 
   // Guarda la ruta del perfil calculada
   const profilePath = getProfilePath();
+
+  // Accesos del menú de usuario: varias páginas ocultan el sidebar, así que
+  // las secciones principales (incluida PQR) también están aquí
+  const menuLinks = user?.role === 'user'
+    ? [
+        { to: '/my-services', label: 'Mis servicios', icon: History },
+        { to: '/pqr', label: 'PQR', icon: MessageSquare },
+      ]
+    : user?.role === 'mechanic'
+      ? [
+          { to: '/mechanic-orders', label: 'Órdenes', icon: ClipboardList },
+          { to: '/mechanic-pqr', label: 'PQR', icon: MessageSquare },
+        ]
+      : [];
 
   return (
     // Barra de navegación fija en la parte superior, con fondo semitransparente y blur
@@ -133,6 +147,17 @@ export default function Navbar({ isAuthenticated = false, userName, userAvatar, 
                             Perfil
                           </Link>
                         )}
+                        {menuLinks.map(link => (
+                          <Link
+                            key={link.to}
+                            to={link.to}
+                            className="flex items-center gap-2 px-4 py-3 text-gray-300 hover:bg-dark-800 transition-colors text-sm"
+                            onClick={() => setShowUserMenu(false)}
+                          >
+                            <link.icon className="w-4 h-4" />
+                            {link.label}
+                          </Link>
+                        ))}
                         {/* Botón de cerrar sesión en rojo */}
                         <button
                           onClick={handleLogout}
@@ -194,6 +219,17 @@ export default function Navbar({ isAuthenticated = false, userName, userAvatar, 
                           <User className="w-4 h-4" />
                           Perfil
                         </Link>
+                      {menuLinks.map(link => (
+                        <Link
+                          key={link.to}
+                          to={link.to}
+                          className="flex items-center gap-2 px-4 py-3 text-gray-300 hover:bg-dark-800 transition-colors text-sm"
+                          onClick={() => setShowUserMenu(false)}
+                        >
+                          <link.icon className="w-4 h-4" />
+                          {link.label}
+                        </Link>
+                      ))}
                         <button
                           onClick={handleLogout}
                           className="w-full flex items-center gap-2 px-4 py-3 text-red-400 hover:bg-dark-800 transition-colors text-sm"
@@ -258,6 +294,11 @@ export default function Navbar({ isAuthenticated = false, userName, userAvatar, 
                       Perfil
                     </Link>
                   )}
+                  {menuLinks.map(link => (
+                    <Link key={link.to} to={link.to} className="block px-4 py-2 text-gray-300 hover:bg-dark-800 rounded-lg text-sm">
+                      {link.label}
+                    </Link>
+                  ))}
                   <button
                     onClick={handleLogout}
                     className="w-full text-left px-4 py-2 text-red-400 hover:bg-dark-800 rounded-lg text-sm"
@@ -282,6 +323,11 @@ export default function Navbar({ isAuthenticated = false, userName, userAvatar, 
                   <Link to={profilePath} className="block px-4 py-2 text-gray-300 hover:bg-dark-800 rounded-lg text-sm">
                     Perfil
                   </Link>
+                  {menuLinks.map(link => (
+                    <Link key={link.to} to={link.to} className="block px-4 py-2 text-gray-300 hover:bg-dark-800 rounded-lg text-sm">
+                      {link.label}
+                    </Link>
+                  ))}
                   <button
                     onClick={handleLogout}
                     className="w-full text-left px-4 py-2 text-red-400 hover:bg-dark-800 rounded-lg text-sm"

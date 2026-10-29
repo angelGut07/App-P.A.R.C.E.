@@ -8,6 +8,7 @@ import DriverLicenseForm from '../components/profile/DriverLicenseForm';
 import PasswordForm from '../components/profile/PasswordForm';
 import VehiclesSection from '../components/profile/VehiclesSection';
 import MechanicSection from '../components/profile/MechanicSection';
+import RatingSummary from '../components/profile/RatingSummary';
 import { useAuth } from '../../controllers/AuthContext';
 
 /**
@@ -35,6 +36,7 @@ export default function ProfilePage() {
             <p className="text-gray-400 text-sm">Edita y guarda tu información</p>
           </div>
 
+          {!isAdmin && <div className="card p-6 sm:p-8"><RatingSummary /></div>}
           <div className="card p-6 sm:p-8"><PersonalInfoForm /></div>
           {!isAdmin && <div className="card p-6 sm:p-8"><DriverLicenseForm /></div>}
           {!isAdmin && <div className="card p-6 sm:p-8"><VehiclesSection /></div>}

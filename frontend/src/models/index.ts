@@ -46,6 +46,11 @@ export interface MechanicProfile {
 
 export type ApplicationStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 
+export interface RatingAverage {
+  average: number | null;
+  count: number;
+}
+
 export interface UserProfile {
   id: number;
   email: string;
@@ -60,6 +65,11 @@ export interface UserProfile {
   roles: ApiRole[];
   driverLicense: DriverLicense | null;
   mechanicProfile: MechanicProfile | null;
+  /** Promedio de las calificaciones recibidas en cada rol (sin el detalle de cada una). */
+  ratingSummary?: {
+    asCustomer: RatingAverage;
+    asMechanic: RatingAverage;
+  };
   mechanicApplication: {
     id: number;
     status: ApplicationStatus;

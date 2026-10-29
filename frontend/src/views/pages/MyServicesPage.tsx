@@ -81,7 +81,7 @@ export default function MyServicesPage() {
                       <>
                         <Link to={`/payment?request=${r.id}`} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gold-500/15 text-gold-300 text-sm"><CreditCard className="w-4 h-4" /> Pago</Link>
                         <Link to={`/payment/receipt?request=${r.id}`} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-dark-700 text-gray-300 text-sm"><Receipt className="w-4 h-4" /> Comprobante</Link>
-                        <Link to={`/survey?request=${r.id}`} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-yellow-500/15 text-yellow-300 text-sm"><Star className="w-4 h-4" /> Calificar</Link>
+                        <Link to={`/survey?request=${r.id}`} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-yellow-500/15 text-yellow-300 text-sm"><Star className="w-4 h-4" /> {r.customerRating != null ? 'Ver calificación' : 'Calificar'}</Link>
                       </>
                     )}
                     {r.mechanicId && (

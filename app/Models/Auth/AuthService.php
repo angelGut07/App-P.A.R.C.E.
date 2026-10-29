@@ -385,7 +385,8 @@ class AuthService
 
     /**
      * Obtiene los datos crudos de perfil de un usuario (fila de `users`,
-     * incluidos los campos de licencia de conducción).
+     * incluidos los campos de licencia de conducción) y el promedio de las
+     * calificaciones que ha recibido como cliente y como mecánico.
      *
      * @param int $userId ID del usuario
      * @return array|null Fila de la tabla `users`, o null si no existe
@@ -396,7 +397,15 @@ class AuthService
             'SELECT id, email, first_name, last_name, id_number, phone, profile_picture_url,
                     account_status, last_login_at, created_at,
                     driver_license_number, driver_license_expiration_date,
-                    driver_license_document_url, driver_license_uploaded_at
+                    driver_license_document_url, driver_license_uploaded_at,
+                    (SELECT ROUND(AVG(r.score), 1) FROM ratings r
+                      WHERE r.ratee_id = users.id AND r.rating_type = \'mechanic_to_customer\') AS customer_rating_average,
+                    (SELECT COUNT(*) FROM ratings r
+                      WHERE r.ratee_id = users.id AND r.rating_type = \'mechanic_to_customer\') AS customer_rating_count,
+                    (SELECT ROUND(AVG(r.score), 1) FROM ratings r
+                      WHERE r.ratee_id = users.id AND r.rating_type = \'customer_to_mechanic\') AS mechanic_rating_average,
+                    (SELECT COUNT(*) FROM ratings r
+                      WHERE r.ratee_id = users.id AND r.rating_type = \'customer_to_mechanic\') AS mechanic_rating_count
              FROM users
              WHERE id = ? AND deleted_at IS NULL',
             [$userId]

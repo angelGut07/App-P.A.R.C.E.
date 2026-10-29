@@ -6,7 +6,7 @@ import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import { useAuth } from '../../controllers/AuthContext';
 import { errorMessage, requestService, surveyService } from '../../services';
-import type { ServiceRequest } from '@/models';
+import type { ServiceRequest, Survey } from '@/models';
 import { fullName } from '../format';
 
 function StarInput({ value, onChange }: { value: number; onChange: (n: number) => void }) {
@@ -24,6 +24,25 @@ function StarInput({ value, onChange }: { value: number; onChange: (n: number) =
   );
 }
 
+function StarsView({ value }: { value: number }) {
+  return (
+    <span className="inline-flex gap-0.5">
+      {[1, 2, 3, 4, 5].map(star => (
+        <Star key={star} className={`w-4 h-4 ${star <= value ? 'text-yellow-500 fill-yellow-500' : 'text-gray-600'}`} />
+      ))}
+    </span>
+  );
+}
+
+function SummaryRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-2 border-b border-anthracite-800 last:border-0">
+      <span className="text-gray-400 text-sm">{label}</span>
+      <span className="text-white text-sm text-right">{children}</span>
+    </div>
+  );
+}
+
 /**
  * Después de un servicio completado (?request=ID): el cliente califica al
  * mecánico (tabla ratings) y responde la encuesta de satisfacción de la
@@ -33,11 +52,10 @@ export default function SatisfactionSurveyPage() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const [request, setRequest] = useState<ServiceRequest | null>(null);
-  const [surveyDone, setSurveyDone] = useState(false);
+  const [mySurvey, setMySurvey] = useState<Survey | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
 
   const [rating, setRating] = useState({ overall: 0, punctuality: 0, quality: 0, comment: '' });
   const [survey, setSurvey] = useState({ satisfaction: 0, recommend: null as boolean | null, comments: '' });
@@ -56,14 +74,14 @@ export default function SatisfactionSurveyPage() {
       const [res, mine] = await Promise.all([requestService.get(id), surveyService.mine()]);
       if (res.success && res.data) setRequest(res.data.serviceRequest);
       else setError(errorMessage(res, 'No se pudo cargar el servicio'));
-      setSurveyDone(!!mine.data?.surveys.some(s => s.serviceRequestId === id));
+      setMySurvey(mine.data?.surveys.find(s => s.serviceRequestId === id) ?? null);
       setLoading(false);
     })();
   }, [searchParams]);
 
   const alreadyRated = request?.customerRating != null;
   const needsRating = !alreadyRated;
-  const needsSurvey = !surveyDone;
+  const needsSurvey = mySurvey === null;
   const ratingReady = rating.overall > 0;
   const surveyReady = survey.satisfaction > 0 && survey.recommend !== null;
   const canSend = (needsRating ? ratingReady : true) && (needsSurvey ? surveyReady : true) && (needsRating || needsSurvey);
@@ -98,8 +116,11 @@ export default function SatisfactionSurveyPage() {
       }
     }
 
+    // Recarga lo guardado para mostrar el resumen de lo que se envió
+    const [res, mine] = await Promise.all([requestService.get(request.id), surveyService.mine()]);
+    if (res.success && res.data) setRequest(res.data.serviceRequest);
+    setMySurvey(mine.data?.surveys.find(s => s.serviceRequestId === request.id) ?? null);
     setSending(false);
-    setSent(true);
   };
 
   return (
@@ -121,12 +142,38 @@ export default function SatisfactionSurveyPage() {
                 <p className="text-gray-400">{error || 'Aún no tienes servicios completados para calificar.'}</p>
                 <Link to="/services" className="btn-primary inline-block">Ver servicios</Link>
               </div>
-            ) : sent || (!needsRating && !needsSurvey) ? (
-              <div className="text-center space-y-4 py-6">
-                <CheckCircle className="w-16 h-16 text-green-400 mx-auto" />
-                <p className="text-white text-xl font-bold">¡Gracias por tu opinión!</p>
-                <p className="text-gray-400 text-sm">Ya registramos tu calificación y encuesta del servicio {request.serviceCode}.</p>
-                <Link to="/home" className="btn-primary inline-block">Volver al inicio</Link>
+            ) : !needsRating && !needsSurvey ? (
+              <div className="space-y-6">
+                <div className="text-center space-y-2">
+                  <CheckCircle className="w-14 h-14 text-green-400 mx-auto" />
+                  <p className="text-white text-xl font-bold">¡Gracias por tu opinión!</p>
+                  <p className="text-gray-400 text-sm">
+                    Servicio <span className="text-white">{request.serviceCode}</span> · {request.serviceTypeName} · Mecánico{' '}
+                    <span className="text-white">{fullName(request.mechanicFirstName, request.mechanicLastName)}</span>
+                  </p>
+                </div>
+
+                <section>
+                  <h2 className="text-lg font-bold text-gold-400 mb-2">Tu calificación al mecánico</h2>
+                  <SummaryRow label="Atención recibida"><StarsView value={request.customerRating ?? 0} /></SummaryRow>
+                  {request.punctualityRating != null && <SummaryRow label="Puntualidad"><StarsView value={request.punctualityRating} /></SummaryRow>}
+                  {request.serviceQualityRating != null && <SummaryRow label="Solución del problema"><StarsView value={request.serviceQualityRating} /></SummaryRow>}
+                  {request.customerFeedback && <SummaryRow label="Comentario">“{request.customerFeedback}”</SummaryRow>}
+                </section>
+
+                {mySurvey && (
+                  <section>
+                    <h2 className="text-lg font-bold text-gold-400 mb-2">Tu encuesta de satisfacción</h2>
+                    <SummaryRow label="Satisfacción general"><StarsView value={mySurvey.overallSatisfaction} /></SummaryRow>
+                    <SummaryRow label="¿Recomendarías P.A.R.C.E?">{mySurvey.wouldRecommend ? 'Sí' : 'No'}</SummaryRow>
+                    {mySurvey.comments && <SummaryRow label="Comentarios">“{mySurvey.comments}”</SummaryRow>}
+                  </section>
+                )}
+
+                <div className="flex justify-center gap-3">
+                  <Link to="/my-services" className="btn-outline inline-block">Mis servicios</Link>
+                  <Link to="/home" className="btn-primary inline-block">Volver al inicio</Link>
+                </div>
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-8">

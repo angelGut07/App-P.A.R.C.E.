@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Zap, Star, ClipboardList, DollarSign, MapPin, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Zap, Star, ClipboardList, DollarSign, MapPin, ToggleLeft, ToggleRight, MessageSquare } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import { useAuth } from '../../controllers/AuthContext';
@@ -130,7 +130,7 @@ export default function MechanicHomePage() {
           </div>
 
           {/* Accesos rápidos */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <button onClick={() => navigate('/mechanic-orders')}
               className="card p-5 hover:ring-2 hover:ring-gold-500/50 transition-all text-left">
               <ClipboardList className="w-8 h-8 text-gold-500 mb-3" />
@@ -142,6 +142,12 @@ export default function MechanicHomePage() {
               <Star className="w-8 h-8 text-yellow-500 mb-3" />
               <h3 className="text-white font-bold">Mi Perfil</h3>
               <p className="text-gray-400 text-sm">Gestiona tu información y reputación</p>
+            </button>
+            <button onClick={() => navigate('/mechanic-pqr')}
+              className="card p-5 hover:ring-2 hover:ring-gold-500/50 transition-all text-left">
+              <MessageSquare className="w-8 h-8 text-gold-500 mb-3" />
+              <h3 className="text-white font-bold">PQR</h3>
+              <p className="text-gray-400 text-sm">Peticiones, quejas, reclamos y sugerencias</p>
             </button>
           </div>
         </motion.div>

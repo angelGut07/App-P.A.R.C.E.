@@ -583,6 +583,18 @@ class ServiceRequestService
             return null;
         }
 
+        // Una calificación individual solo la ve quien la dio (y el
+        // administrador): el calificado conoce únicamente su promedio.
+        $hidden = match ($userRole) {
+            'mechanic' => ['customer_rating', 'punctuality_rating', 'service_quality_rating', 'customer_feedback'],
+            'customer' => ['mechanic_rating_score', 'mechanic_rating_punctuality_score',
+                           'mechanic_rating_quality_score', 'mechanic_rating_comment', 'mechanic_rating_created_at'],
+            default    => [],
+        };
+        foreach ($hidden as $field) {
+            unset($request[$field]);
+        }
+
         // Aplicar privacidad de ubicación: ocultar coordenadas exactas cuando la solicitud está pendiente
         if ($request['status'] === 'pending' && $userRole === 'mechanic') {
             $request['latitude_approximate']  = round((float)$request['latitude'], 2);
@@ -645,7 +657,9 @@ class ServiceRequestService
      */
     public function getMechanicRequests(int $mechanicId, ?string $status = null): array
     {
-        // Consulta base con datos del cliente y el vehículo
+        // Consulta base con datos del cliente y el vehículo. Sin la
+        // calificación que dejó cada cliente: el mecánico solo ve su promedio
+        // (getMechanicStats).
         $sql = 'SELECT sr.*,
                        c.first_name as customer_first_name,
                        c.last_name as customer_last_name,
@@ -653,16 +667,11 @@ class ServiceRequestService
                        v.make as vehicle_make,
                        v.model as vehicle_model,
                        v.license_plate as vehicle_license_plate,
-                       st.name as service_type_name,
-                       cr.score as customer_rating,
-                       cr.punctuality_score as punctuality_rating,
-                       cr.quality_score as service_quality_rating,
-                       cr.comment as customer_feedback
+                       st.name as service_type_name
                 FROM service_requests sr
                 LEFT JOIN users c ON sr.customer_id = c.id
                 LEFT JOIN vehicles v ON sr.vehicle_id = v.id
                 LEFT JOIN service_types st ON st.code = sr.emergency_type
-                LEFT JOIN ratings cr ON cr.service_request_id = sr.id AND cr.rating_type = \'customer_to_mechanic\'
                 WHERE sr.mechanic_id = ? AND sr.deleted_at IS NULL';
 
         $params = [$mechanicId];
