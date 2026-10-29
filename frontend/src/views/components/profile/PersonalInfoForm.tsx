@@ -57,7 +57,12 @@ export default function PersonalInfoForm() {
 
   const input = (key: keyof typeof form, placeholder = '', type = 'text') => (
     <input type={type} value={form[key]} placeholder={placeholder}
-      onChange={e => setForm(prev => ({ ...prev, [key]: e.target.value }))}
+      onChange={e => {
+        // Teléfono y cédula solo admiten números (el teléfono también "+", espacios y guiones)
+        const value = key === 'phone' ? e.target.value.replace(/[^\d+\s-]/g, '')
+          : key === 'idNumber' ? e.target.value.replace(/\D/g, '') : e.target.value;
+        setForm(prev => ({ ...prev, [key]: value }));
+      }}
       className={`input-field w-full ${errors[key] ? 'border-red-500' : ''}`} />
   );
 

@@ -27,6 +27,9 @@ class SessionManager
      */
     private const DEFAULT_ABSOLUTE_TIMEOUT = 7200;
 
+    /** Segundos que el ID anterior sigue siendo válido tras regenerarlo */
+    private const REGENERATION_GRACE_SECONDS = 60;
+
     /**
      * Crea una nueva sesión
      *
@@ -213,10 +216,18 @@ class SessionManager
         // Ambas escrituras deben ser atómicas: si el insert falla tras el delete,
         // el usuario quedaría deslogueado en medio de una regeneración rutinaria
         // (anti-fijación de sesión), no ante un error real de su parte.
+        // El ID antiguo no se borra en el acto: al abrir una página salen varias
+        // peticiones en paralelo con la cookie anterior, y si el ID dejara de
+        // existir recibirían 401 y la app cerraría la sesión del usuario. Se
+        // deja vigente unos segundos (expires_at) y luego caduca solo.
+        $oldPayload = json_decode((string)$session['payload'], true) ?: [];
+        $graceEnd = time() + self::REGENERATION_GRACE_SECONDS;
+        $oldPayload['expires_at'] = min($oldPayload['expires_at'] ?? $graceEnd, $graceEnd);
+
         Database::beginTransaction();
         try {
-            // Requisito 7.2: Eliminar la sesión antigua
-            Database::delete('sessions', 'id = ?', [$sessionId]);
+            // Requisito 7.2: La sesión antigua caduca tras el periodo de gracia
+            Database::update('sessions', ['payload' => json_encode($oldPayload)], 'id = ?', [$sessionId]);
 
             // Requisito 7.3: Crear una nueva sesión con el mismo user_id y metadatos
             Database::insert('sessions', [

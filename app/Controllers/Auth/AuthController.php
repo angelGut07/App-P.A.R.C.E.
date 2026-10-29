@@ -511,6 +511,9 @@ class AuthController extends Controller
                         $field => "El campo es requerido y no debe superar los {$max} caracteres"
                     ]);
                 }
+                if ($field === 'phone' && $value !== '' && !RequestValidator::isValidPhone($value)) {
+                    return ResponseFormatter::validationError(['phone' => RequestValidator::PHONE_ERROR]);
+                }
                 $updates[$field] = $value === '' ? null : $value;
             }
 
@@ -588,7 +591,9 @@ class AuthController extends Controller
             $this->authService->updateProfile($userId, $updates);
 
             // Retornar perfil actualizado
-            return $this->me($request);
+            $profile = $this->buildUserProfile($userId);
+
+            return ResponseFormatter::success($profile, 'Perfil actualizado correctamente', 200);
 
         } catch (\Exception $e) {
             return ErrorHandler::handleException($e);

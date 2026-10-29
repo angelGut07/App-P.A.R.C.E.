@@ -318,4 +318,33 @@ class SessionManagerTest extends TestCase
         if ($idleBackup === null) { unset($_ENV['SESSION_IDLE_TIMEOUT']); } else { $_ENV['SESSION_IDLE_TIMEOUT'] = $idleBackup; }
         if ($lifetimeBackup === null) { unset($_ENV['SESSION_LIFETIME']); } else { $_ENV['SESSION_LIFETIME'] = $lifetimeBackup; }
     }
+
+    // =========================================================================
+    // regenerate()
+    // =========================================================================
+
+    public function testRegenerateKeepsTheOldIdValidForAShortGracePeriodInsteadOfDeletingIt(): void
+    {
+        $this->allowTransactions();
+        $oldUpdateParams = null;
+        $this->expectQueries([
+            $this->stepFetchOne($this->sessionRow()),
+            function (\PDOStatement $stmt) use (&$oldUpdateParams): void {
+                $stmt->method('execute')->willReturnCallback(function ($params) use (&$oldUpdateParams) {
+                    $oldUpdateParams = $params;
+                    return true;
+                });
+            },
+            $this->stepWrite(1), // INSERT de la nueva sesión
+        ]);
+
+        $newId = $this->manager->regenerate('session-abc');
+
+        $this->assertSame(40, strlen($newId));
+        // Las peticiones en paralelo con la cookie anterior siguen funcionando unos segundos
+        $payload = json_decode($oldUpdateParams[0], true);
+        $this->assertLessThanOrEqual(time() + 60, $payload['expires_at']);
+        $this->assertGreaterThan(time(), $payload['expires_at']);
+        $this->assertSame('session-abc', end($oldUpdateParams));
+    }
 }

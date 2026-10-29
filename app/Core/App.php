@@ -71,7 +71,7 @@ class App
                 'ssl_ca' => $this->env('DB_SSL_CA', null),
             ],
             'session' => [
-                'lifetime' => (int) $this->env('SESSION_LIFETIME', '120'),
+                'lifetime' => (int) $this->env('SESSION_LIFETIME', '7200'), // segundos
                 'driver' => $this->env('SESSION_DRIVER', 'file'),
             ],
         ];

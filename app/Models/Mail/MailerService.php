@@ -28,7 +28,7 @@ class MailerService
      */
     public function send(string $to, string $subject, string $html): bool
     {
-        $apiKey = $_ENV['RESEND_API_KEY'] ?? '';
+        $apiKey = trim((string)($_ENV['RESEND_API_KEY'] ?? ''));
 
         if ($apiKey === '') {
             error_log("MailerService: RESEND_API_KEY no configurada — correo a {$to} no enviado");

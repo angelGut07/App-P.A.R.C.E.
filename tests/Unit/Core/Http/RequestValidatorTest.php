@@ -305,4 +305,16 @@ class RequestValidatorTest extends TestCase
 
         $this->assertTrue(RequestValidator::validateResetPasswordRequest($request)['valid']);
     }
+
+    public function testIsValidPhoneAcceptsOnlyDigitsWithOptionalPlusSpacesAndHyphens(): void
+    {
+        $this->assertTrue(RequestValidator::isValidPhone('3001234567'));
+        $this->assertTrue(RequestValidator::isValidPhone('+57 300 123 4567'));
+        $this->assertTrue(RequestValidator::isValidPhone('601-555-1234'));
+
+        $this->assertFalse(RequestValidator::isValidPhone('300abc4567'));
+        $this->assertFalse(RequestValidator::isValidPhone('telefono'));
+        $this->assertFalse(RequestValidator::isValidPhone('12345'));
+        $this->assertFalse(RequestValidator::isValidPhone('1234567890123456'));
+    }
 }

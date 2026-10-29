@@ -131,6 +131,13 @@ class HealthController extends Controller
             $overallStatus = 'degraded';
         }
 
+        // Integraciones externas: solo si tienen clave, nunca su valor. Sin
+        // ellas la app funciona, pero el asistente y los correos no.
+        $checks['integrations'] = [
+            'chatbot' => trim((string)($_ENV['GROQ_API_KEY'] ?? '')) !== '' ? 'configured' : 'missing',
+            'mail'    => trim((string)($_ENV['RESEND_API_KEY'] ?? '')) !== '' ? 'configured' : 'missing',
+        ];
+
         // Verificar versión de PHP
         $checks['php'] = [
             'status'   => 'healthy',

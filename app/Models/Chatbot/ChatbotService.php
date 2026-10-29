@@ -52,7 +52,7 @@ PROMPT;
      */
     public function reply(array $messages): string
     {
-        $apiKey = $_ENV['GROQ_API_KEY'] ?? '';
+        $apiKey = trim((string)($_ENV['GROQ_API_KEY'] ?? ''));
         if ($apiKey === '') {
             throw new DomainException('El asistente no está disponible en este momento', 503);
         }

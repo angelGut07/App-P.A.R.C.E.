@@ -212,6 +212,23 @@ class RequestValidator
         ];
     }
 
+    public const PHONE_ERROR = 'El teléfono solo puede tener números (entre 7 y 15 dígitos)';
+
+    /**
+     * Teléfono válido: solo dígitos, con "+" inicial, espacios o guiones
+     * opcionales, entre 7 y 15 dígitos y como máximo 20 caracteres
+     * (users.phone VARCHAR(20)).
+     */
+    public static function isValidPhone(string $phone): bool
+    {
+        $phone = trim($phone);
+        $digits = preg_replace('/\D/', '', $phone);
+
+        return strlen($phone) <= 20
+            && preg_match('/^\+?[\d\s-]+$/', $phone) === 1
+            && strlen($digits) >= 7 && strlen($digits) <= 15;
+    }
+
     /**
      * Sanitiza la entrada de cadena para prevenir ataques de inyección
      *
@@ -337,8 +354,8 @@ class RequestValidator
 
         // Teléfono (opcional, users.phone VARCHAR(20))
         $phone = $request->input('phone');
-        if ($phone !== null && strlen($phone) > 20) {
-            $errors['phone'] = ['El teléfono no debe superar los 20 caracteres'];
+        if ($phone !== null && $phone !== '' && !self::isValidPhone((string)$phone)) {
+            $errors['phone'] = [self::PHONE_ERROR];
         }
 
         // Cédula (opcional): solo dígitos, entre 6 y 10

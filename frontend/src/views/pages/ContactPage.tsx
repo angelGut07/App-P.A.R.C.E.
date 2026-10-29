@@ -13,10 +13,18 @@ export default function ContactPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [opened, setOpened] = useState(false);
+  const [phoneError, setPhoneError] = useState('');
   const { user } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Solo dígitos (con + y espacios opcionales): entre 7 y 15 números
+    const digits = formData.phone.replace(/[\s+]/g, '');
+    if (!/^\+?[\d\s]+$/.test(formData.phone.trim()) || digits.length < 7 || digits.length > 15) {
+      setPhoneError('Ingresa un número de teléfono válido (solo números, entre 7 y 15 dígitos)');
+      return;
+    }
+    setPhoneError('');
     setIsSubmitting(true);
 
     // Crear el mailto link
@@ -96,12 +104,19 @@ export default function ContactPage() {
                   </label>
                   <input
                     type="tel"
+                    inputMode="tel"
+                    maxLength={20}
                     value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    onChange={(e) => {
+                      // Descarta letras y símbolos mientras se escribe
+                      setFormData({ ...formData, phone: e.target.value.replace(/[^\d+\s]/g, '') });
+                      setPhoneError('');
+                    }}
                     className="input-field"
                     placeholder="+57 300 123 4567"
                     required
                   />
+                  {phoneError && <p className="text-red-400 text-xs">{phoneError}</p>}
                 </div>
 
                 {/* Reason */}
