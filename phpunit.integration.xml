@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    Suite de integración (opcional). No la usan `composer test` ni el CI,
-    que corren solo la suite "Unit" sin base de datos. Requiere la base de
-    datos "parce_test" migrada (ver README, sección Pruebas).
+    Suite de integración. `composer test` corre solo la suite "Unit" (sin
+    base de datos); esta la corre el CI contra MySQL 8 (job "integration")
+    y, en local, requiere la base de datos "parce_test" migrada (ver README,
+    sección Pruebas).
 
     Ejecutar manualmente con:
         vendor/bin/phpunit -c phpunit.integration.xml

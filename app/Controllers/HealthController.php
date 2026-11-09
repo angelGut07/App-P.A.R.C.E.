@@ -8,6 +8,7 @@ use App\Core\Response;
 use App\Core\Database;
 use App\Core\Http\ResponseFormatter;
 use App\Core\Http\ErrorHandler;
+use App\Models\Auth\CaptchaService;
 
 /**
  * Controlador de Verificación de Salud del Sistema
@@ -136,6 +137,7 @@ class HealthController extends Controller
         $checks['integrations'] = [
             'chatbot' => trim((string)($_ENV['GROQ_API_KEY'] ?? '')) !== '' ? 'configured' : 'missing',
             'mail'    => trim((string)($_ENV['RESEND_API_KEY'] ?? '')) !== '' ? 'configured' : 'missing',
+            'captcha' => (new CaptchaService())->isEnabled() ? 'configured' : 'missing',
         ];
 
         // Verificar versión de PHP

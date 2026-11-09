@@ -9,7 +9,7 @@
  *   php bin/parce seed                    Carga los datos de demostración
  *   php bin/parce fresh                   Revierte todo, migra y siembra (solo local)
  *   php bin/parce expire-requests [min]   Expira solicitudes pendientes sin atender (por defecto 30 min)
- *   php bin/parce cleanup-sessions        Borra sesiones vencidas
+ *   php bin/parce cleanup-sessions        Borra sesiones vencidas y registros viejos de intentos fallidos
  *   php bin/parce cleanup-logs [días]     Borra logs más antiguos que N días (por defecto 30)
  */
 
@@ -20,6 +20,7 @@ require_once BASE_PATH . '/vendor/autoload.php';
 use App\Core\Database;
 use App\Core\EnvLoader;
 use App\Core\MigrationRunner;
+use App\Models\Auth\LoginThrottleService;
 use App\Models\Auth\SessionManager;
 
 EnvLoader::load(BASE_PATH . '/.env');
@@ -86,7 +87,8 @@ try {
 
         case 'cleanup-sessions':
             $deleted = (new SessionManager())->cleanup();
-            echo date('Y-m-d H:i:s') . " — {$deleted} sesión(es) vencida(s) eliminada(s).\n";
+            $throttles = (new LoginThrottleService())->cleanup();
+            echo date('Y-m-d H:i:s') . " — {$deleted} sesión(es) vencida(s) y {$throttles} registro(s) de intentos fallidos eliminados.\n";
             break;
 
         case 'cleanup-logs':

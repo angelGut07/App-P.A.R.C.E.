@@ -91,7 +91,6 @@ PROMPT;
         $response = curl_exec($ch);
         $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);
-        curl_close($ch);
 
         $reply = $response !== false ? (json_decode($response, true)['choices'][0]['message']['content'] ?? null) : null;
 

@@ -158,6 +158,40 @@ class MechanicApplicationController extends Controller
     }
 
     /**
+     * Adjuntar el soporte de un servicio pedido (p. ej. los papeles de la grúa)
+     * a una solicitud propia pendiente
+     *
+     * POST /api/mechanic-applications/{id}/services/{code}/document
+     */
+    public function attachServiceDocument(Request $request, int $id, string $code): Response
+    {
+        try {
+            $jsonValidation = RequestValidator::parseJsonBody($request);
+            if (!$jsonValidation['valid']) {
+                return ResponseFormatter::error($jsonValidation['error'], null, $jsonValidation['statusCode']);
+            }
+
+            $url = (string)($request->input('support_document_url') ?? '');
+            if ($url === '' || mb_strlen($url) > 500 || !UploadService::isUploadUrl($url)) {
+                return ResponseFormatter::validationError([
+                    'support_document_url' => 'Sube primero el documento con POST /api/uploads',
+                ]);
+            }
+
+            $application = $this->service->attachServiceDocument(
+                $id,
+                (int)$request->getAttribute('userId'),
+                strtolower($code),
+                $url
+            );
+
+            return ResponseFormatter::success(['application' => $application], 'Soporte adjuntado correctamente', 200);
+        } catch (\Exception $e) {
+            return ErrorHandler::handleException($e);
+        }
+    }
+
+    /**
      * Listar todas las solicitudes de mecánico con filtro opcional de estado
      * (administrador)
      *
@@ -199,9 +233,32 @@ class MechanicApplicationController extends Controller
     public function approve(Request $request, int $id): Response
     {
         try {
+            // El body es opcional: sin approved_services se aprueban todos los
+            // servicios pedidos; review_notes explica los que se rechazan.
+            if ($request->rawBody() !== '') {
+                $jsonValidation = RequestValidator::parseJsonBody($request);
+                if (!$jsonValidation['valid']) {
+                    return ResponseFormatter::error(
+                        $jsonValidation['error'], null, $jsonValidation['statusCode']
+                    );
+                }
+            }
+
+            $validation = MechanicApplicationValidator::validateApproveRequest($request);
+            if (!$validation['valid']) {
+                return ResponseFormatter::validationError($validation['errors']);
+            }
+
+            $notes = $validation['data']['review_notes'];
+
             // adminUserId SIEMPRE sale de la sesión autenticada — nunca del body.
             $adminUserId = $request->getAttribute('userId');
-            $application = $this->service->approve($id, $adminUserId);
+            $application = $this->service->approve(
+                $id,
+                $adminUserId,
+                $validation['data']['approved_services'],
+                $notes !== null ? RequestValidator::sanitizeString($notes) : null
+            );
 
             return ResponseFormatter::success(
                 ['application' => $application],

@@ -500,8 +500,9 @@ class ServiceRequestController extends Controller
 
             $radius = max(1, min(200, (int)$radius));
 
-            // Obtener las solicitudes pendientes cercanas
+            // Obtener las solicitudes pendientes cercanas de los servicios que tiene aprobados
             $requests = $this->serviceRequestService->getNearbyPendingRequests(
+                (int)$request->getAttribute('userId'),
                 (float)$latitude,
                 (float)$longitude,
                 $radius

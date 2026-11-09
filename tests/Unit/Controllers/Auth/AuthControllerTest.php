@@ -91,8 +91,8 @@ class AuthControllerTest extends TestCase
         ]);
 
         $request = $this->makeRequest('POST', body: [
-            'email' => 'ya-existe@parce.local', 'password' => 'Password123!',
-            'password_confirmation' => 'Password123!', 'first_name' => 'Ana', 'last_name' => 'Gomez',
+            'email' => 'ya-existe@parce.local', 'password' => 'Tr3n-Azul#Lluvia',
+            'password_confirmation' => 'Tr3n-Azul#Lluvia', 'first_name' => 'Ana', 'last_name' => 'Gomez',
         ]);
 
         $response = $this->controller->register($request);
@@ -117,8 +117,8 @@ class AuthControllerTest extends TestCase
         ]);
 
         $request = $this->makeRequest('POST', body: [
-            'email' => 'nueva@parce.local', 'password' => 'Password123!',
-            'password_confirmation' => 'Password123!', 'first_name' => 'Nueva', 'last_name' => 'Cuenta',
+            'email' => 'nueva@parce.local', 'password' => 'Tr3n-Azul#Lluvia',
+            'password_confirmation' => 'Tr3n-Azul#Lluvia', 'first_name' => 'Nueva', 'last_name' => 'Cuenta',
         ]);
 
         $response = $this->controller->register($request);
@@ -150,8 +150,13 @@ class AuthControllerTest extends TestCase
     public function testLoginReturns401ForInvalidCredentialsWithoutRevealingWhichFieldWasWrong(): void
     {
         $_SERVER['REMOTE_ADDR'] = $this->testIp();
+        $this->allowTransactions();
         $this->expectQueries([
+            $this->stepFetchOne(false), // bloqueo por cuenta: sin fallos previos
             $this->stepFetchOne(false), // usuario no existe
+            $this->stepWrite(1),        // recordFailure(): INSERT IGNORE
+            $this->stepFetchOne(['failed_attempts' => 0, 'lockout_level' => 0, 'locked_until' => null, 'last_failed_at' => null]),
+            $this->stepWrite(1),        // recordFailure(): UPDATE
         ]);
 
         $request = $this->makeRequest('POST', body: [
@@ -168,9 +173,11 @@ class AuthControllerTest extends TestCase
     {
         $_SERVER['REMOTE_ADDR'] = $this->testIp();
         $this->expectQueries([
+            $this->stepFetchOne(false), // bloqueo por cuenta: sin fallos previos
             $this->stepFetchOne($this->activeUserRow(['password_hash' => password_hash('Correct123!', PASSWORD_ARGON2ID)])),
             $this->stepWrite(1), // INSERT sessions
             $this->stepWrite(1), // UPDATE users last_login_at/ip
+            $this->stepWrite(0), // clear(): DELETE login_throttles
             $this->stepFetchOne($this->activeUserRow()), // buildUserProfile: getUserProfileData
             $this->stepFetchAll([['slug' => 'customer']]),
             $this->stepFetchAll([]), // buildUserProfile: solicitudes de mecánico
@@ -186,6 +193,67 @@ class AuthControllerTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('cliente@parce.local', $body['data']['user']['email']);
         $this->assertNotNull($this->responseHeader($response, 'Set-Cookie'));
+        // El id de la sesión viaja solo en la cookie HttpOnly
+        $this->assertArrayNotHasKey('id', $body['data']['session']);
+    }
+
+    public function testLoginRejectsALockedAccountWithoutCheckingThePassword(): void
+    {
+        $_SERVER['REMOTE_ADDR'] = $this->testIp();
+        $this->expectQueries([
+            $this->stepFetchOne(['failed_attempts' => 5, 'lockout_level' => 1, 'locked_until' => time() + 600, 'last_failed_at' => time()]),
+        ]);
+
+        $request = $this->makeRequest('POST', body: ['email' => 'cliente@parce.local', 'password' => 'Correct123!']);
+
+        $response = $this->controller->login($request);
+
+        $this->assertSame(429, $response->getStatusCode());
+        $this->assertStringContainsString('bloqueamos temporalmente el acceso a esta cuenta', $this->responseBody($response)['error']);
+        $this->assertNotNull($this->responseHeader($response, 'Retry-After'));
+    }
+
+    public function testLoginLocksTheAccountOnTheFifthConsecutiveFailure(): void
+    {
+        $_SERVER['REMOTE_ADDR'] = $this->testIp();
+        $this->allowTransactions();
+        $previous = ['failed_attempts' => 4, 'lockout_level' => 0, 'locked_until' => null, 'last_failed_at' => time() - 60];
+        $this->expectQueries([
+            $this->stepFetchOne($previous), // estado: 4 fallos, aún sin bloqueo
+            $this->stepFetchOne(false),     // usuario no existe (mismo trato que uno real)
+            $this->stepWrite(1),            // INSERT IGNORE
+            $this->stepFetchOne($previous), // SELECT … FOR UPDATE
+            $this->stepWrite(1),            // UPDATE: queda bloqueada 15 minutos
+            $this->stepFetchOne(false),     // aviso por correo: el correo no tiene cuenta
+        ]);
+
+        $request = $this->makeRequest('POST', body: ['email' => 'nadie@parce.local', 'password' => 'wrong-password-1']);
+
+        $response = $this->controller->login($request);
+
+        $this->assertSame(429, $response->getStatusCode());
+        $this->assertStringContainsString('15 minutos', $this->responseBody($response)['error']);
+    }
+
+    public function testLoginRequiresTheCaptchaAfterSeveralFailuresWhenItIsConfigured(): void
+    {
+        $_SERVER['REMOTE_ADDR'] = $this->testIp();
+        $_ENV['TURNSTILE_SITE_KEY'] = 'site-key-de-prueba';
+        $_ENV['TURNSTILE_SECRET_KEY'] = 'secret-key-de-prueba';
+        $this->expectQueries([
+            $this->stepFetchOne(['failed_attempts' => 3, 'lockout_level' => 0, 'locked_until' => null, 'last_failed_at' => time()]),
+        ]);
+
+        try {
+            // Sin captcha_token: se rechaza antes de verificar la contraseña (y sin red)
+            $request = $this->makeRequest('POST', body: ['email' => 'cliente@parce.local', 'password' => 'Correct123!']);
+            $response = $this->controller->login($request);
+        } finally {
+            unset($_ENV['TURNSTILE_SITE_KEY'], $_ENV['TURNSTILE_SECRET_KEY']);
+        }
+
+        $this->assertSame(400, $response->getStatusCode());
+        $this->assertSame(['Confirma que no eres un robot para continuar'], $this->responseBody($response)['fields']['captcha']);
     }
 
     // =========================================================================
@@ -369,6 +437,34 @@ class AuthControllerTest extends TestCase
         $response = $this->controller->resetPassword($request);
 
         $this->assertSame(400, $response->getStatusCode());
+    }
+
+    // =========================================================================
+    // passwordCheck()
+    // =========================================================================
+
+    public function testPasswordCheckReportsEveryRuleThePasswordBreaks(): void
+    {
+        $this->mockPdo->expects($this->never())->method('prepare');
+
+        $request = $this->makeRequest('POST', body: ['password' => 'carlos2026', 'first_name' => 'Carlos']);
+
+        $response = $this->controller->passwordCheck($request);
+        $data = $this->responseBody($response)['data'];
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertFalse($data['valid']);
+        $this->assertCount(2, $data['errors']); // composición + contiene el nombre
+    }
+
+    public function testPasswordCheckAcceptsAStrongPassword(): void
+    {
+        $request = $this->makeRequest('POST', body: ['password' => 'Tr3n-Azul#Lluvia', 'email' => 'ana@parce.local']);
+
+        $data = $this->responseBody($this->controller->passwordCheck($request))['data'];
+
+        $this->assertTrue($data['valid']);
+        $this->assertSame([], $data['errors']);
     }
 
     // =========================================================================

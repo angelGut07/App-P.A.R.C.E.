@@ -5,6 +5,7 @@ namespace App\Models\ServiceRequest;
 use App\Core\Database;
 use App\Core\DatabaseException;
 use App\Core\DomainException;
+use App\Models\MechanicApplication\MechanicApplicationService;
 use App\Models\ServiceRequest\ServiceRequestValidator;
 
 /**
@@ -272,7 +273,7 @@ class ServiceRequestService
     {
         // Verificar que la solicitud exista y esté en estado pendiente
         $request = Database::fetchOne(
-            'SELECT id, status FROM service_requests WHERE id = ? AND deleted_at IS NULL',
+            'SELECT id, status, emergency_type FROM service_requests WHERE id = ? AND deleted_at IS NULL',
             [$requestId]
         );
 
@@ -304,6 +305,15 @@ class ServiceRequestService
             && $mechanic['driver_license_expiration_date'] < date('Y-m-d')) {
             throw new DomainException(
                 'La licencia de conducción del mecánico está vencida. No puede aceptar solicitudes.',
+                403
+            );
+        }
+
+        // Aprobación por tipo de servicio: solo puede atender los servicios que
+        // un administrador le aprobó (p. ej. grúa exige su propia aprobación)
+        if (!(new MechanicApplicationService())->isApprovedFor($mechanicId, (string)$request['emergency_type'])) {
+            throw new DomainException(
+                'No estás habilitado para prestar este tipo de servicio. Puedes solicitarlo desde tu perfil.',
                 403
             );
         }
@@ -724,14 +734,17 @@ class ServiceRequestService
     }
 
     /**
-     * Obtiene solicitudes pendientes cercanas para mecánicos (solo ubicación aproximada).
+     * Obtiene solicitudes pendientes cercanas para mecánicos (solo ubicación
+     * aproximada), únicamente de los tipos de servicio que el mecánico tiene
+     * aprobados.
      *
+     * @param int   $mechanicId ID del mecánico autenticado
      * @param float $latitude   Latitud actual del mecánico
      * @param float $longitude  Longitud actual del mecánico
      * @param int   $radiusKm   Radio de búsqueda en kilómetros (por defecto 50 km)
      * @return array            Lista de solicitudes pendientes con ubicación aproximada
      */
-    public function getNearbyPendingRequests(float $latitude, float $longitude, int $radiusKm = 50): array
+    public function getNearbyPendingRequests(int $mechanicId, float $latitude, float $longitude, int $radiusKm = 50): array
     {
         // Usar la fórmula de Haversine para el cálculo de distancia
         // Nota: es un cálculo aproximado válido para distancias cortas
@@ -759,6 +772,7 @@ class ServiceRequestService
                 LEFT JOIN service_types st ON st.code = sr.emergency_type
                 WHERE sr.status = 'pending'
                   AND sr.deleted_at IS NULL
+                  AND sr.emergency_type IN (" . MechanicApplicationService::approvedServicesSql() . ")
                 HAVING distance_km <= ?
                 ORDER BY
                     CASE sr.priority
@@ -771,6 +785,6 @@ class ServiceRequestService
                     sr.requested_at ASC
                 LIMIT 50";
 
-        return Database::fetchAll($sql, [$latitude, $longitude, $latitude, $radiusKm]);
+        return Database::fetchAll($sql, [$latitude, $longitude, $latitude, $mechanicId, $radiusKm]);
     }
 }

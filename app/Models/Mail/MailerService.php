@@ -19,6 +19,19 @@ class MailerService
     private const API_URL = 'https://api.resend.com/emails';
 
     /**
+     * URL del frontend para los enlaces de los correos: APP_FRONTEND_URL si
+     * el frontend vive en otro dominio; si no, APP_URL.
+     *
+     * @param string $path Ruta del frontend, con "/" inicial (ej. /forgot-password)
+     */
+    public static function frontendUrl(string $path = ''): string
+    {
+        $base = rtrim($_ENV['APP_FRONTEND_URL'] ?? $_ENV['APP_URL'] ?? 'http://localhost:5173', '/');
+
+        return $base . $path;
+    }
+
+    /**
      * Envía un correo HTML.
      *
      * @param string $to      Destinatario
@@ -59,7 +72,6 @@ class MailerService
         $response = curl_exec($ch);
         $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);
-        curl_close($ch);
 
         if ($response === false || $curlError !== '') {
             error_log("MailerService: error de red enviando a {$to}: {$curlError}");

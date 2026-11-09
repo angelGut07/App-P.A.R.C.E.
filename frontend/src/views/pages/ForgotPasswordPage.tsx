@@ -3,27 +3,47 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Mail, ArrowLeft, CheckCircle, AlertCircle, Loader } from 'lucide-react';
 import Logo from '../components/Logo';
-import { authService, errorMessage } from '../../services';
+import Captcha from '../components/Captcha';
+import { authService, errorMessage, fieldErrors } from '../../services';
+import { useCaptchaConfig } from '../../controllers/useCaptchaConfig';
 
+/**
+ * "Olvidé mi contraseña": pide el correo y envía el enlace de recuperación.
+ * Responde igual exista o no la cuenta, para no revelar qué correos están
+ * registrados, y exige el CAPTCHA si está activo (evita envíos masivos).
+ */
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const captcha = useCaptchaConfig();
+  const [captchaToken, setCaptchaToken] = useState('');
+  const [captchaError, setCaptchaError] = useState('');
+  const [captchaReset, setCaptchaReset] = useState(0);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
+    if (captcha?.enabled && !captchaToken) {
+      setCaptchaError('Confirma que no eres un robot para continuar');
+      return;
+    }
+    setLoading(true);
 
-    const response = await authService.forgotPassword(email);
+    const response = await authService.forgotPassword(email, captchaToken || undefined);
     setLoading(false);
 
     if (response.success) {
       setSent(true);
-    } else {
-      setError(errorMessage(response, 'No se pudo procesar la solicitud'));
+      return;
     }
+    // Cada token sirve para un solo envío: se pide uno nuevo
+    if (captcha?.enabled) setCaptchaReset(n => n + 1);
+    const captchaFieldError = fieldErrors(response).captcha;
+    if (captchaFieldError) setCaptchaError(captchaFieldError);
+    else setError(errorMessage(response, 'No se pudo procesar la solicitud'));
   };
 
   return (
@@ -89,6 +109,15 @@ export default function ForgotPasswordPage() {
                     />
                   </div>
                 </div>
+                {captcha?.enabled && captcha.siteKey && (
+                  <Captcha
+                    siteKey={captcha.siteKey}
+                    action="forgot-password"
+                    onToken={token => { setCaptchaToken(token); if (token) setCaptchaError(''); }}
+                    resetKey={captchaReset}
+                    error={captchaError}
+                  />
+                )}
                 <button
                   type="submit"
                   className="w-full btn-primary flex items-center justify-center gap-2"

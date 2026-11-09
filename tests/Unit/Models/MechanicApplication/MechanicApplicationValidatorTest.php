@@ -33,10 +33,56 @@ class MechanicApplicationValidatorTest extends TestCase
             'specialty'           => 'Mecánica General',
             'years_experience'    => '5',
             'justification'       => 'Tengo 5 años de experiencia como mecánico automotriz certificado.',
+            'services'            => ['battery', 'TIRE', 'battery'],
         ]));
 
         $this->assertTrue($result['valid']);
         $this->assertEmpty($result['errors']);
+    }
+
+    public function testExtractDataNormalizesTheRequestedServices(): void
+    {
+        $data = MechanicApplicationValidator::extractData($this->makeRequest([
+            'services' => [' Battery ', 'tire', 'battery'],
+        ]));
+
+        $this->assertSame(['battery', 'tire'], $data['services']);
+    }
+
+    public function testCreateRequestRequiresAtLeastOneService(): void
+    {
+        $result = MechanicApplicationValidator::validateCreateRequest($this->makeRequest([
+            'certification_title' => 'Técnico en Mecánica Automotriz',
+            'services'            => [],
+        ]));
+
+        $this->assertSame('Selecciona al menos un servicio que puedas prestar', $result['errors']['services']);
+    }
+
+    public function testCreateRequestRejectsMalformedServiceCodes(): void
+    {
+        $result = MechanicApplicationValidator::validateCreateRequest($this->makeRequest([
+            'certification_title' => 'Técnico en Mecánica Automotriz',
+            'services'            => ['battery', 'drop table'],
+        ]));
+
+        $this->assertSame('Hay servicios no válidos en la solicitud', $result['errors']['services']);
+    }
+
+    public function testApproveRequestWithoutServicesApprovesEverythingRequested(): void
+    {
+        $result = MechanicApplicationValidator::validateApproveRequest($this->makeRequest([]));
+
+        $this->assertTrue($result['valid']);
+        $this->assertNull($result['data']['approved_services']);
+        $this->assertNull($result['data']['review_notes']);
+    }
+
+    public function testApproveRequestRejectsAnEmptyListOfServices(): void
+    {
+        $result = MechanicApplicationValidator::validateApproveRequest($this->makeRequest(['approved_services' => []]));
+
+        $this->assertArrayHasKey('approved_services', $result['errors']);
     }
 
     public function testCreateRequestFailsWhenCertificationIsMissing(): void

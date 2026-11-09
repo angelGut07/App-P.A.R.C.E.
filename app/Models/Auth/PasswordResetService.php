@@ -25,7 +25,8 @@ class PasswordResetService
         private readonly PasswordHasher $passwordHasher,
         private readonly AuthService $authService,
         private readonly SessionManager $sessionManager,
-        private readonly MailerService $mailer
+        private readonly MailerService $mailer,
+        private readonly LoginThrottleService $loginThrottle = new LoginThrottleService()
     ) {
     }
 
@@ -87,8 +88,7 @@ class PasswordResetService
             throw $e;
         }
 
-        $frontendUrl = rtrim($_ENV['APP_FRONTEND_URL'] ?? $_ENV['APP_URL'] ?? 'http://localhost:5173', '/');
-        $resetUrl = "{$frontendUrl}/reset-password?token={$token}";
+        $resetUrl = MailerService::frontendUrl("/reset-password?token={$token}");
 
         $this->mailer->send(
             $email,
@@ -122,6 +122,18 @@ class PasswordResetService
         }
 
         $userId = (int) $record['user_id'];
+
+        // La política general ya la revisó el validador; aquí se completa con
+        // el correo y el nombre del dueño del enlace, que solo se conocen ahora.
+        $owner = Database::fetchOne(
+            'SELECT email, first_name, last_name FROM users WHERE id = ?',
+            [$userId]
+        );
+        $policyErrors = PasswordPolicy::errors($newPassword, $owner ?? []);
+        if ($policyErrors !== []) {
+            throw new DomainException($policyErrors[0], 400);
+        }
+
         $newHash = $this->passwordHasher->hash($newPassword);
 
         Database::beginTransaction();
@@ -147,6 +159,12 @@ class PasswordResetService
         // Fuera de la transacción: cerrar sesiones activas es una limpieza de
         // seguridad, no parte de la integridad transaccional del cambio en sí.
         $this->sessionManager->destroyAllUserSessions($userId);
+
+        // Quien restablece desde su correo demostró ser el dueño: se levanta
+        // cualquier bloqueo por intentos fallidos de inicio de sesión.
+        if (!empty($owner['email'])) {
+            $this->loginThrottle->clear($owner['email']);
+        }
 
         return $userId;
     }

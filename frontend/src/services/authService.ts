@@ -1,5 +1,5 @@
 import { api } from './apiClient';
-import type { UserProfile } from '@/models';
+import type { CaptchaConfig, UserProfile } from '@/models';
 
 export interface RegisterInput {
   email: string;
@@ -18,7 +18,11 @@ export interface RegisterInput {
   vehicle_color?: string;
   soat_number?: string;
   tecnomecanica_number?: string;
+  /** Token de Turnstile, si el CAPTCHA está activo */
+  captcha_token?: string;
   // Solo para role = mechanic
+  /** Códigos de los servicios que puede prestar (al menos uno) */
+  services?: string[];
   certification_title?: string;
   certification_document_url?: string;
   specialty?: string;
@@ -37,8 +41,10 @@ export interface ProfileInput {
 }
 
 export const authService = {
-  login: (email: string, password: string) =>
-    api.post<{ user: UserProfile }>('/auth/login', { email, password }),
+  login: (email: string, password: string, captchaToken?: string) =>
+    api.post<{ user: UserProfile }>('/auth/login', { email, password, captcha_token: captchaToken }),
+
+  captchaConfig: () => api.get<CaptchaConfig>('/auth/captcha'),
 
   register: (data: RegisterInput) => api.post<{ user: UserProfile }>('/auth/register', data),
 
@@ -55,7 +61,12 @@ export const authService = {
       new_password_confirmation: newPassword,
     }),
 
-  forgotPassword: (email: string) => api.post<null>('/auth/forgot-password', { email }),
+  /** Revisa una contraseña con la política del servidor (no la guarda). */
+  checkPassword: (password: string, context: { email?: string; first_name?: string; last_name?: string } = {}) =>
+    api.post<{ valid: boolean; errors: string[] }>('/auth/password-check', { password, ...context }),
+
+  forgotPassword: (email: string, captchaToken?: string) =>
+    api.post<null>('/auth/forgot-password', { email, captcha_token: captchaToken }),
 
   resetPassword: (token: string, password: string) =>
     api.post<null>('/auth/reset-password', { token, new_password: password, new_password_confirmation: password }),

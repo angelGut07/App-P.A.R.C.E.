@@ -5,6 +5,7 @@ namespace App\Models\Admin;
 use App\Core\Database;
 use App\Core\DomainException;
 use App\Models\Concerns\CastsColumns;
+use App\Models\MechanicApplication\MechanicApplicationService;
 
 /**
  * Servicio de Administración
@@ -212,7 +213,10 @@ class AdminService
         $sql = "SELECT u.id, u.email, u.first_name, u.last_name, u.id_number, u.phone,
                        u.profile_picture_url, u.account_status, u.created_at, u.last_login_at,
                        GROUP_CONCAT(DISTINCT r.slug ORDER BY r.id SEPARATOR ',') AS roles,
-                       (SELECT COUNT(*) FROM vehicles v WHERE v.user_id = u.id AND v.deleted_at IS NULL) AS vehicle_count
+                       (SELECT COUNT(*) FROM vehicles v WHERE v.user_id = u.id AND v.deleted_at IS NULL) AS vehicle_count,
+                       (SELECT GROUP_CONCAT(st.name ORDER BY st.name SEPARATOR '|')
+                          FROM service_types st
+                         WHERE st.code IN (" . MechanicApplicationService::approvedServicesSql('u.id') . ")) AS approved_services
                 FROM users u
                 LEFT JOIN user_roles ur ON ur.user_id = u.id AND ur.is_active = TRUE
                 LEFT JOIN roles r ON r.id = ur.role_id
@@ -247,6 +251,7 @@ class AdminService
         $items = array_map(function ($row) {
             $row['roles'] = $row['roles'] !== null ? explode(',', $row['roles']) : [];
             $row['vehicle_count'] = (int)$row['vehicle_count'];
+            $row['approved_services'] = !empty($row['approved_services']) ? explode('|', $row['approved_services']) : [];
             return $row;
         }, Database::fetchAll($sql, $params));
 

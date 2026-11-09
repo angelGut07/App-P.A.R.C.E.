@@ -50,6 +50,8 @@ $router->post('/api/auth/register', [AuthController::class, 'register']);
 $router->post('/api/auth/login', [AuthController::class, 'login']);
 $router->post('/api/auth/forgot-password', [AuthController::class, 'forgotPassword']);
 $router->post('/api/auth/reset-password', [AuthController::class, 'resetPassword']);
+$router->post('/api/auth/password-check', [AuthController::class, 'passwordCheck']);
+$router->get('/api/auth/captcha', [AuthController::class, 'captchaConfig']);
 $router->post('/api/auth/logout', [AuthController::class, 'logout'])->middleware($auth);
 $router->get('/api/auth/me', [AuthController::class, 'me'])->middleware($auth);
 $router->put('/api/auth/profile', [AuthController::class, 'profile'])->middleware($auth);
@@ -108,6 +110,7 @@ $router->post('/api/mechanic-applications', [MechanicApplicationController::clas
 $router->get('/api/mechanic-applications/me', [MechanicApplicationController::class, 'myApplications'])->middleware($auth);
 $router->post('/api/mechanic-applications/{id}/cancel', [MechanicApplicationController::class, 'cancel'])->middleware($auth);
 $router->post('/api/mechanic-applications/{id}/document', [MechanicApplicationController::class, 'attachDocument'])->middleware($auth);
+$router->post('/api/mechanic-applications/{id}/services/{code}/document', [MechanicApplicationController::class, 'attachServiceDocument'])->middleware($auth);
 
 // ── PQR y encuestas ─────────────────────────────────────────────────────────
 $router->get('/api/pqr', [PQRController::class, 'index'])->middleware($people);

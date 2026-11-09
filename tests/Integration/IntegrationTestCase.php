@@ -39,7 +39,7 @@ abstract class IntegrationTestCase extends TestCase
     {
         $pdo = Database::getConnection();
         $pdo->exec('SET FOREIGN_KEY_CHECKS=0');
-        foreach (['mechanic_applications', 'user_roles', 'sessions', 'password_reset_tokens', 'users'] as $table) {
+        foreach (['mechanic_application_services', 'mechanic_applications', 'login_throttles', 'user_roles', 'sessions', 'password_reset_tokens', 'users'] as $table) {
             $pdo->exec("TRUNCATE TABLE {$table}");
         }
         $pdo->exec('SET FOREIGN_KEY_CHECKS=1');
@@ -116,14 +116,40 @@ abstract class IntegrationTestCase extends TestCase
         )['c'];
     }
 
-    protected function createPendingApplication(int $userId, string $justification = 'Justificacion de prueba con longitud suficiente.'): int
-    {
-        return Database::insert('mechanic_applications', [
+    /**
+     * Crea una solicitud pendiente directamente en la base, con los servicios
+     * pedidos (por defecto batería).
+     */
+    protected function createPendingApplication(
+        int $userId,
+        string $justification = 'Justificacion de prueba con longitud suficiente.',
+        array $services = ['battery']
+    ): int {
+        $applicationId = Database::insert('mechanic_applications', [
             'user_id'             => $userId,
             'certification_title' => 'Técnico automotriz',
             'justification'       => $justification,
             'status'              => 'pending',
         ]);
+
+        foreach ($services as $code) {
+            Database::insert('mechanic_application_services', [
+                'application_id'    => $applicationId,
+                'service_type_code' => $code,
+                'status'            => 'pending',
+            ]);
+        }
+
+        return $applicationId;
+    }
+
+    /** Estado de cada servicio pedido en una solicitud: [código => estado] */
+    protected function serviceStatuses(int $applicationId): array
+    {
+        return array_column(Database::fetchAll(
+            'SELECT service_type_code, status FROM mechanic_application_services WHERE application_id = ? ORDER BY service_type_code',
+            [$applicationId]
+        ), 'status', 'service_type_code');
     }
 
     /**

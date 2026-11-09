@@ -89,6 +89,7 @@ export default function MechanicOrdersPage() {
     loadAvailable();
   };
 
+  const approvedServices = user?.profile.mechanicProfile?.services ?? [];
   const activeOrders = mine.filter(r => r.status === 'assigned' || r.status === 'in_progress');
   const history = mine.filter(r => !['assigned', 'in_progress'].includes(r.status));
   const busy = activeOrders.length > 0;
@@ -133,6 +134,13 @@ export default function MechanicOrdersPage() {
 
           <section className="space-y-3">
             <h2 className="text-xl font-bold text-white">Solicitudes disponibles</h2>
+            {/* Aprobación por tipo de servicio: solo llegan solicitudes de los servicios habilitados */}
+            <p className="text-sm text-gray-400">
+              {approvedServices.length > 0
+                ? <>Ves solicitudes de: <span className="text-gray-200">{approvedServices.map(service => service.name).join(', ')}</span>. </>
+                : <>Aún no tienes servicios aprobados, así que no recibirás solicitudes. </>}
+              <Link to="/mechanic-profile" className="text-gold-400 hover:text-gold-300">Solicitar más servicios</Link>
+            </p>
             {!isActive ? (
               <div className="card p-6 flex items-center gap-3 text-yellow-300 border border-yellow-500/30 bg-yellow-500/5">
                 <AlertTriangle className="w-5 h-5" /> Activa tu disponibilidad para ver solicitudes cercanas.

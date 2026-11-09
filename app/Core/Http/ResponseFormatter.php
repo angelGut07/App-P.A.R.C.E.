@@ -36,11 +36,11 @@ class ResponseFormatter
      * Requisitos: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7
      *
      * @param mixed $data Datos de la respuesta (opcional)
-     * @param string $message Mensaje de éxito (opcional)
+     * @param string|null $message Mensaje de éxito (opcional)
      * @param int $statusCode Código de estado HTTP (predeterminado: 200)
      * @return Response Objeto de respuesta
      */
-    public static function success($data = null, string $message = null, int $statusCode = 200): Response
+    public static function success($data = null, ?string $message = null, int $statusCode = 200): Response
     {
         $response = new Response();
 
@@ -330,12 +330,13 @@ class ResponseFormatter
      * Requisito 6.3, 6.4: Retornar HTTP 429 con el encabezado Retry-After
      *
      * @param int $retryAfter Segundos hasta que se reinicie el límite de tasa
+     * @param string|null $message Mensaje propio (ej. bloqueo de una cuenta)
      * @return Response Objeto de respuesta
      */
-    public static function rateLimitExceeded(int $retryAfter): Response
+    public static function rateLimitExceeded(int $retryAfter, ?string $message = null): Response
     {
         $response = self::error(
-            'Demasiados intentos. Intenta de nuevo más tarde',
+            $message ?? 'Demasiados intentos. Intenta de nuevo más tarde',
             ['retryAfter' => $retryAfter],
             429
         );

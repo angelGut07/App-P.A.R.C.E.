@@ -92,11 +92,12 @@ class RateLimiter
     private const WINDOW_DURATION = 900; // 15 minutos
 
     /**
-     * Máximo de intentos permitidos por ventana
+     * Máximo de intentos permitidos por ventana. Público para que quien llama
+     * pueda calcular los intentos ya usados (MAX_ATTEMPTS - remaining).
      *
      * Requisito 6.3, 17.3
      */
-    private const MAX_ATTEMPTS = 5;
+    public const MAX_ATTEMPTS = 5;
 
     /**
      * Verifica si la solicitud está limitada por tasa

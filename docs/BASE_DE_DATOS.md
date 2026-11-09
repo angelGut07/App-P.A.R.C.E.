@@ -1,6 +1,6 @@
 # Modelo de datos
 
-El esquema se crea con las migraciones de `database/migrations/` (seis archivos, uno por área). Todas las tablas usan InnoDB, `utf8mb4` y claves foráneas; los borrados de usuarios, vehículos, solicitudes, encuestas y PQR son lógicos (`deleted_at`).
+El esquema se crea con las migraciones de `database/migrations/`: seis archivos iniciales, uno por área, más los cambios posteriores (bloqueo de inicio de sesión y aprobación de mecánicos por servicio). Todas las tablas usan InnoDB, `utf8mb4` y claves foráneas; los borrados de usuarios, vehículos, solicitudes, encuestas y PQR son lógicos (`deleted_at`).
 
 ## Diagrama entidad-relación
 
@@ -11,6 +11,8 @@ erDiagram
     users ||--o{ sessions : abre
     users ||--o{ password_reset_tokens : solicita
     users ||--o{ mechanic_applications : envia
+    mechanic_applications ||--|{ mechanic_application_services : pide
+    service_types ||--o{ mechanic_application_services : se_aprueba_en
     users ||--o{ vehicles : posee
     vehicles ||--o{ vehicle_documents : tiene
     service_types ||--o{ service_requests : clasifica
@@ -34,8 +36,8 @@ erDiagram
 
 | Área | Tablas |
 |---|---|
-| Identidad y acceso | `roles`, `users`, `user_roles`, `sessions`, `password_reset_tokens` |
-| Mecánicos | `mechanic_applications` |
+| Identidad y acceso | `roles`, `users`, `user_roles`, `sessions`, `password_reset_tokens`, `login_throttles` |
+| Mecánicos | `mechanic_applications`, `mechanic_application_services` |
 | Vehículos | `vehicles`, `vehicle_documents` |
 | Servicios | `service_types`, `service_requests`, `service_request_evidences`, `ratings`, `surveys` |
 | Inventario | `product_categories`, `products`, `suppliers`, `merchandise_receipts`, `merchandise_receipt_items`, `service_request_parts` |
@@ -61,6 +63,11 @@ erDiagram
 | Estado de disponibilidad del producto guardado | Se deriva de `stock_quantity` frente a `min_stock` |
 | Solicitudes de rol con dos parejas revisor/fecha (`reviewed_*`, `approved_*`) y dos notas | Una sola pareja revisor/fecha y una nota en `mechanic_applications` |
 
+**Tablas agregadas en noviembre de 2026:**
+
+- `mechanic_application_services (application_id, service_type_code)`: relación muchos a muchos entre solicitudes de mecánico y tipos de servicio. El estado (`pending` / `approved` / `rejected`) y el soporte (`support_document_url`) dependen de la pareja completa, así que cumplen 2FN; el revisor, la fecha y la nota siguen siendo únicos por solicitud y se quedan en `mechanic_applications`. Los servicios habilitados de un mecánico no se guardan aparte: son los aprobados dentro de sus solicitudes aprobadas (`MechanicApplicationService::approvedServicesSql()`).
+- `login_throttles (identifier_hash)`: intentos fallidos de inicio de sesión por cuenta. Se identifica por el hash SHA-256 del correo, no por el id del usuario, para que un correo inexistente se comporte igual que uno real y no se guarde en claro lo que escribió un atacante.
+
 **Datos que se guardan a propósito aunque parezcan derivables:**
 
 - `products.stock_quantity` es el saldo actual del producto. Solo lo modifican, dentro de una transacción con la fila bloqueada, los ingresos de mercancía, los ajustes manuales y los repuestos usados en un servicio.
@@ -69,6 +76,6 @@ erDiagram
 
 ## Reglas que garantiza la base de datos
 
-- Unicidad: correo y cédula por usuario, una calificación por sentido y servicio, una encuesta y un pago por servicio, una factura por proveedor.
+- Unicidad: correo y cédula por usuario, una calificación por sentido y servicio, una encuesta y un pago por servicio, una factura por proveedor, un registro por servicio dentro de cada solicitud de mecánico.
 - `CHECK`: puntajes entre 1 y 5, cantidades positivas, datos de tarjeta / PSE solo según el método de pago, revisor y fecha obligatorios en solicitudes revisadas, motivo obligatorio al rechazar.
 - Placa y VIN no son únicos en la tabla porque un vehículo eliminado puede volver a registrarse; la unicidad entre vehículos activos la garantiza `VehicleService` con bloqueos de MySQL.

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
 import type { AppRole, UserProfile } from '@/models';
-import { authService, errorMessage, setUnauthorizedHandler } from '@/services';
+import { authService, fieldErrors, setUnauthorizedHandler } from '@/services';
 
 export type UserRole = AppRole;
 
@@ -22,7 +22,8 @@ interface AuthContextType {
   isAuthenticated: boolean;
   /** true mientras se verifica la sesión al cargar la app */
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string; user?: AuthUser }>;
+  /** captchaError: el servidor pide (o rechazó) el CAPTCHA para el próximo intento */
+  login: (email: string, password: string, captchaToken?: string) => Promise<{ ok: boolean; error?: string; captchaError?: string; user?: AuthUser }>;
   logout: () => Promise<void>;
   /** Vuelve a leer el perfil (después de editarlo o de un cambio de rol) */
   refresh: () => Promise<void>;
@@ -78,10 +79,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setUnauthorizedHandler(null);
   }, [refresh]);
 
-  const login = async (email: string, password: string) => {
-    const res = await authService.login(email, password);
+  const login = async (email: string, password: string, captchaToken?: string) => {
+    const res = await authService.login(email, password, captchaToken);
     if (!res.success || !res.data?.user) {
-      return { ok: false, error: errorMessage(res, 'Correo o contraseña incorrectos') };
+      return {
+        ok: false,
+        error: res.error || 'Correo o contraseña incorrectos',
+        captchaError: fieldErrors(res).captcha,
+      };
     }
     const authUser = toAuthUser(res.data.user);
     setUser(authUser);

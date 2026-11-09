@@ -3,8 +3,16 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Lock, ArrowLeft, CheckCircle, AlertCircle, Loader, Eye, EyeOff } from 'lucide-react';
 import Logo from '../components/Logo';
+import PasswordChecklist from '../components/PasswordChecklist';
 import { authService, errorMessage } from '../../services';
+import { meetsPasswordRules } from '@/models/passwordPolicy';
 
+/**
+ * Restablecer la contraseña desde el enlace del correo (?token=...). La nueva
+ * contraseña debe cumplir la política; el servidor también revisa que no
+ * contenga el nombre ni el correo del dueño del enlace. Al terminar se cierran
+ * las demás sesiones y se levanta cualquier bloqueo por intentos fallidos.
+ */
 export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -37,8 +45,8 @@ export default function ResetPasswordPage() {
         return;
       }
 
-      if (password.length < 8) {
-        setValidationErrors({ password: 'La contraseña debe tener al menos 8 caracteres' });
+      if (!meetsPasswordRules(password)) {
+        setValidationErrors({ password: 'La contraseña no cumple todas las reglas' });
         return;
       }
 
@@ -120,7 +128,7 @@ export default function ResetPasswordPage() {
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={e => setPassword(e.target.value)}
-                      placeholder="Mínimo 8 caracteres"
+                      placeholder="Tu nueva contraseña"
                       className={`input-field pl-10 pr-10 ${validationErrors.password ? 'border-red-500' : ''}`}
                       required
                       disabled={loading}
@@ -133,9 +141,7 @@ export default function ResetPasswordPage() {
                       {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
                   </div>
-                  {validationErrors.password && (
-                    <p className="text-sm text-red-400">{validationErrors.password}</p>
-                  )}
+                  <PasswordChecklist password={password} serverError={validationErrors.password} />
                 </div>
 
                 <div className="space-y-2">

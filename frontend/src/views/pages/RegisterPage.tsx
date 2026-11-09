@@ -3,8 +3,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff, ArrowLeft, User, Phone, Car, FileText, Upload, ChevronRight, ChevronLeft, Shield, AlertCircle, CheckCircle } from 'lucide-react';
 import Logo from '../components/Logo';
-import { authService, errorMessage, mechanicApplicationService, uploadService } from '../../services';
+import PasswordChecklist from '../components/PasswordChecklist';
+import Captcha from '../components/Captcha';
+import { useCaptchaConfig } from '../../controllers/useCaptchaConfig';
+import ServiceSelector from '../components/ServiceSelector';
+import { attachServiceDocuments, authService, errorMessage, fieldErrors, mechanicApplicationService, uploadService } from '../../services';
 import { useAuth } from '../../controllers/AuthContext';
+import { useServiceTypes } from '../../controllers/useServiceTypes';
+import { meetsPasswordRules } from '@/models/passwordPolicy';
 
 // ── Validadores colombianos ──────────────────────────────────────────────────
 
@@ -73,6 +79,20 @@ export default function RegisterPage() {
   const [certFile, setCertFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Rechazo de la contraseña por el servidor (muy común, contiene el nombre…)
+  const [passwordError, setPasswordError] = useState('');
+  const [checkingPassword, setCheckingPassword] = useState(false);
+
+  // Servicios que pide el mecánico (cada uno se aprueba por separado) y su soporte opcional
+  const serviceTypes = useServiceTypes();
+  const [selectedServices, setSelectedServices] = useState<string[]>([]);
+  const [serviceFiles, setServiceFiles] = useState<Record<string, File | null>>({});
+
+  // CAPTCHA en el último paso, si el servidor lo tiene activo
+  const captcha = useCaptchaConfig();
+  const [captchaToken, setCaptchaToken] = useState('');
+  const [captchaError, setCaptchaError] = useState('');
+  const [captchaReset, setCaptchaReset] = useState(0);
 
   const [form, setForm] = useState({
     email: '', password: '', confirmPassword: '',
@@ -98,7 +118,7 @@ export default function RegisterPage() {
   // ── Errores calculados ───────────────────────────────────────────────────────
   const errs = {
     email:       !form.email ? 'El correo es requerido' : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email) ? 'Correo inválido' : '',
-    password:    form.password.length < 8 ? 'Mínimo 8 caracteres' : (!/[A-Z]/.test(form.password) && !/[0-9]/.test(form.password)) ? 'Debe tener mayúscula o número' : '',
+    password:    meetsPasswordRules(form.password) ? '' : 'La contraseña no cumple todas las reglas',
     confirmPassword: form.confirmPassword !== form.password ? 'Las contraseñas no coinciden' : '',
     firstName:   !form.firstName.trim() ? 'El nombre es requerido' : '',
     lastName:    !form.lastName.trim() ? 'El apellido es requerido' : '',
@@ -113,13 +133,29 @@ export default function RegisterPage() {
     soatCode:    !form.soatCode.trim() ? 'El código SOAT es requerido' : '',
     technoCode:  !form.technoCode.trim() ? 'El código Tecnomecánica es requerido' : '',
     certTitle:   !form.certTitle.trim() ? 'El título del certificado es requerido' : '',
+    services:    selectedServices.length === 0 ? 'Selecciona al menos un servicio que puedas prestar' : '',
+  };
+
+  /**
+   * Revisa la contraseña con la política completa del servidor (contraseñas
+   * comunes, correo, nombre). Devuelve el primer motivo de rechazo o ''.
+   */
+  const checkPasswordOnServer = async (context: { email?: string; first_name?: string; last_name?: string }) => {
+    setCheckingPassword(true);
+    const res = await authService.checkPassword(form.password, context);
+    setCheckingPassword(false);
+    if (!res.success || !res.data) return errorMessage(res, 'No se pudo verificar la contraseña. Intenta de nuevo.');
+    return res.data.valid ? '' : res.data.errors[0];
   };
 
   // ── Handlers de pasos ───────────────────────────────────────────────────────
-  const handleCredentials = (e: React.FormEvent) => {
+  const handleCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
     touchAll('email', 'password', 'confirmPassword');
     if (errs.email || errs.password || errs.confirmPassword) return;
+    const serverError = await checkPasswordOnServer({ email: form.email });
+    setPasswordError(serverError);
+    if (serverError) return;
     setStep('role');
   };
 
@@ -128,12 +164,19 @@ export default function RegisterPage() {
     setStep('personal');
   };
 
-  const handlePersonal = (e: React.FormEvent) => {
+  const handlePersonal = async (e: React.FormEvent) => {
     e.preventDefault();
     const fields = ['firstName', 'lastName', 'phone', 'idNumber'];
     if (role === 'user') fields.push('licenseCode');
     touchAll(...fields);
     if (fields.some(f => errs[f as keyof typeof errs])) return;
+    // Con el nombre ya escrito, la contraseña tampoco puede contenerlo
+    const serverError = await checkPasswordOnServer({ email: form.email, first_name: form.firstName, last_name: form.lastName });
+    if (serverError) {
+      setPasswordError(serverError);
+      setStep('credentials');
+      return;
+    }
     setStep('vehicle');
   };
 
@@ -155,8 +198,8 @@ export default function RegisterPage() {
 
   const handleCert = async (e: React.FormEvent) => {
     e.preventDefault();
-    touchAll('certTitle');
-    if (errs.certTitle || !certFile) return;
+    touchAll('certTitle', 'services');
+    if (errs.certTitle || errs.services || !certFile) return;
     await submit();
   };
 
@@ -166,6 +209,10 @@ export default function RegisterPage() {
    * y aquí se sube y adjunta su certificado.
    */
   const submit = async () => {
+    if (captcha?.enabled && !captchaToken) {
+      setCaptchaError('Confirma que no eres un robot para continuar');
+      return;
+    }
     setIsSubmitting(true);
     setSubmitError(null);
 
@@ -186,12 +233,26 @@ export default function RegisterPage() {
       vehicle_color: form.vehicleColor,
       soat_number: form.soatCode,
       tecnomecanica_number: form.technoCode,
-      ...(role === 'mechanic' ? { certification_title: form.certTitle } : {}),
+      captcha_token: captchaToken || undefined,
+      ...(role === 'mechanic' ? { certification_title: form.certTitle, services: selectedServices } : {}),
     });
 
     if (!res.success || !res.data?.user) {
-      setSubmitError(errorMessage(res, 'No se pudo crear la cuenta'));
       setIsSubmitting(false);
+      // Cada token sirve para un solo envío: se pide uno nuevo
+      if (captcha?.enabled) setCaptchaReset(n => n + 1);
+      const serverCaptchaError = fieldErrors(res).captcha;
+      if (serverCaptchaError) {
+        setCaptchaError(serverCaptchaError);
+        return;
+      }
+      const serverPasswordError = fieldErrors(res).password;
+      if (serverPasswordError) {
+        setPasswordError(serverPasswordError);
+        setStep('credentials');
+        return;
+      }
+      setSubmitError(errorMessage(res, 'No se pudo crear la cuenta'));
       return;
     }
 
@@ -201,6 +262,8 @@ export default function RegisterPage() {
       if (upload.success && upload.data) {
         await mechanicApplicationService.attachDocument(application.id, upload.data.upload.url);
       }
+      // Soporte de cada servicio (opcional); si alguno falla se puede volver a pedir desde el perfil
+      await attachServiceDocuments(application.id, serviceFiles);
     }
 
     await refresh();
@@ -220,6 +283,17 @@ export default function RegisterPage() {
     : ['credentials', 'role', 'personal', 'vehicle'];
 
   const currentStepIndex = stepOrder.indexOf(step);
+
+  // Widget del CAPTCHA para el último paso (vehículo del cliente o certificación del mecánico)
+  const captchaWidget = captcha?.enabled && captcha.siteKey ? (
+    <Captcha
+      siteKey={captcha.siteKey}
+      action="register"
+      onToken={token => { setCaptchaToken(token); if (token) setCaptchaError(''); }}
+      resetKey={captchaReset}
+      error={captchaError}
+    />
+  ) : null;
 
   // ── Clases de input ──────────────────────────────────────────────────────────
   const inputClass = (field: string) =>
@@ -297,7 +371,7 @@ export default function RegisterPage() {
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
                     <input type={showPassword ? 'text' : 'password'} value={form.password}
-                      onChange={e => set('password', e.target.value)}
+                      onChange={e => { set('password', e.target.value); setPasswordError(''); }}
                       onBlur={() => touch('password')}
                       placeholder="••••••••••••"
                       className={`${inputClass('password')} pl-10 pr-10`} required />
@@ -306,10 +380,7 @@ export default function RegisterPage() {
                       {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
                   </div>
-                  <FieldFeedback error={errs.password} touched={!!touched.password} />
-                  {!touched.password && (
-                    <p className="text-xs text-gray-500">Mínimo 8 caracteres, con al menos una mayúscula o un número</p>
-                  )}
+                  <PasswordChecklist password={form.password} serverError={passwordError} />
                 </div>
 
                 <div className="space-y-1">
@@ -329,8 +400,8 @@ export default function RegisterPage() {
                   <FieldFeedback error={errs.confirmPassword} touched={!!touched.confirmPassword} />
                 </div>
 
-                <button type="submit" className="w-full btn-primary flex items-center justify-center gap-2">
-                  Siguiente <ChevronRight className="w-4 h-4" />
+                <button type="submit" disabled={checkingPassword} className="w-full btn-primary flex items-center justify-center gap-2 disabled:opacity-60">
+                  {checkingPassword ? 'Verificando...' : <>Siguiente <ChevronRight className="w-4 h-4" /></>}
                 </button>
                 <div className="text-center text-sm text-gray-500">
                   ¿Ya tienes cuenta?{' '}
@@ -436,8 +507,8 @@ export default function RegisterPage() {
                   </div>
                 )}
 
-                <button type="submit" className="w-full btn-primary flex items-center justify-center gap-2">
-                  Siguiente <ChevronRight className="w-4 h-4" />
+                <button type="submit" disabled={checkingPassword} className="w-full btn-primary flex items-center justify-center gap-2 disabled:opacity-60">
+                  {checkingPassword ? 'Verificando...' : <>Siguiente <ChevronRight className="w-4 h-4" /></>}
                 </button>
               </motion.form>
             )}
@@ -538,6 +609,8 @@ export default function RegisterPage() {
                   </div>
                 )}
 
+                {role !== 'mechanic' && captchaWidget}
+
                 <button type="submit" className="w-full btn-primary flex items-center justify-center gap-2" disabled={isSubmitting}>
                   {isSubmitting ? (
                     <>
@@ -602,6 +675,15 @@ export default function RegisterPage() {
                     </p>
                   )}
                 </div>
+                <ServiceSelector
+                  serviceTypes={serviceTypes}
+                  selected={selectedServices}
+                  onChange={next => { setSelectedServices(next); touch('services'); }}
+                  files={serviceFiles}
+                  onFileChange={(code, file) => setServiceFiles(prev => ({ ...prev, [code]: file }))}
+                  error={touched.services ? errs.services : undefined}
+                />
+                {captchaWidget}
                 <button type="submit" className="w-full btn-primary" disabled={isSubmitting}>
                   {isSubmitting ? (
                     <div className="flex items-center justify-center gap-2">

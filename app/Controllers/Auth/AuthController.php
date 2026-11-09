@@ -11,6 +11,9 @@ use App\Models\Auth\SessionManager;
 use App\Models\Auth\PasswordHasher;
 use App\Models\Auth\RoleValidator;
 use App\Models\Auth\PasswordResetService;
+use App\Models\Auth\PasswordPolicy;
+use App\Models\Auth\LoginThrottleService;
+use App\Models\Auth\CaptchaService;
 use App\Models\Mail\MailerService;
 use App\Core\Http\RequestValidator;
 use App\Core\Http\ResponseFormatter;
@@ -32,23 +35,32 @@ use App\Models\Upload\UploadService;
  */
 class AuthController extends Controller
 {
+    /** Mensaje del campo captcha cuando hace falta (o falló) la verificación */
+    private const CAPTCHA_MESSAGE = 'Confirma que no eres un robot para continuar';
+
     private AuthService $authService;
     private SessionManager $sessionManager;
     private PasswordHasher $passwordHasher;
     private RoleValidator $roleValidator;
     private PasswordResetService $passwordResetService;
+    private LoginThrottleService $loginThrottle;
+    private CaptchaService $captcha;
 
     public function __construct()
     {
+        $mailer = new MailerService();
         $this->passwordHasher = new PasswordHasher();
         $this->sessionManager = new SessionManager();
         $this->authService = new AuthService($this->passwordHasher, $this->sessionManager);
         $this->roleValidator = new RoleValidator();
+        $this->loginThrottle = new LoginThrottleService($mailer);
+        $this->captcha = new CaptchaService();
         $this->passwordResetService = new PasswordResetService(
             $this->passwordHasher,
             $this->authService,
             $this->sessionManager,
-            new MailerService()
+            $mailer,
+            $this->loginThrottle
         );
     }
 
@@ -100,6 +112,11 @@ class AuthController extends Controller
             $validation = RequestValidator::validateRegistrationRequest($request);
             if (!$validation['valid']) {
                 return ResponseFormatter::validationError($validation['errors']);
+            }
+
+            // CAPTCHA (si está configurado): frena la creación masiva de cuentas
+            if (!$this->captcha->verify($request->input('captcha_token'), $ipAddress, 'register')) {
+                return $this->captchaRequiredResponse();
             }
 
             // Extract and sanitize input
@@ -162,11 +179,12 @@ class AuthController extends Controller
             // Contar el registro exitoso para el límite de tasa (evita creación masiva)
             RateLimiter::recordAttempt('register', $ipAddress);
 
-            // Prepare response data — mismo perfil completo que devuelve GET /api/auth/me
+            // Prepare response data — mismo perfil completo que devuelve GET /api/auth/me.
+            // El id de la sesión viaja solo en la cookie HttpOnly: en el JSON
+            // lo podría leer cualquier script de la página.
             $responseData = [
                 'user' => $this->buildUserProfile($authResult->userId),
                 'session' => [
-                    'id' => $authResult->sessionId,
                     'expiresAt' => time() + 7200 // 2 hours
                 ]
             ];
@@ -251,21 +269,50 @@ class AuthController extends Controller
                 $remember = filter_var($remember, FILTER_VALIDATE_BOOLEAN);
             }
 
+            // Bloqueo por cuenta: frena a quien reparte sus intentos entre varias IP
+            $throttle = $this->loginThrottle->status($email);
+            if ($throttle['locked']) {
+                return $this->accountLockedResponse($throttle['retryAfter']);
+            }
+
+            // CAPTCHA tras varios intentos fallidos desde esta IP o contra esta cuenta
+            $ipFailures = RateLimiter::MAX_ATTEMPTS - $rateLimitCheck['remaining'];
+            if ($this->loginNeedsCaptcha($ipFailures, $throttle)
+                && !$this->captcha->verify($request->input('captcha_token'), $ipAddress, 'login')) {
+                return $this->captchaRequiredResponse();
+            }
+
             // Requirement 20.2: Authenticate via AuthService with IP address and user agent
             $userAgent = $request->userAgent();
             $authResult = $this->authService->authenticate($email, $password, $remember, $ipAddress, $userAgent);
 
             // Check authentication result
             if (!$authResult->success) {
-                // Record failed attempt for rate limiting
+                // Cuenta inactiva con la contraseña correcta: no es un intento de adivinarla
+                if (($authResult->errors['account'] ?? null) === 'inactive') {
+                    return ResponseFormatter::forbidden($authResult->message);
+                }
+
+                // Record failed attempt for rate limiting (por IP y por cuenta)
                 RateLimiter::recordAttempt('login', $ipAddress);
-                
-                // Return 401 with generic error message (prevent user enumeration)
-                return ResponseFormatter::unauthorized($authResult->message);
+                $throttle = $this->loginThrottle->recordFailure($email, $ipAddress);
+
+                if ($throttle['locked']) {
+                    return $this->accountLockedResponse($throttle['retryAfter']);
+                }
+
+                // Return 401 with generic error message (prevent user enumeration),
+                // avisando si el próximo intento necesita el CAPTCHA
+                $fields = $this->loginNeedsCaptcha($ipFailures + 1, $throttle)
+                    ? ['captcha' => [self::CAPTCHA_MESSAGE]]
+                    : null;
+
+                return ResponseFormatter::error($authResult->message, $fields, 401);
             }
 
             // Requirement 6.5: Reset rate limit on successful login
             RateLimiter::reset('login', $ipAddress);
+            $this->loginThrottle->clear($email);
 
             // Calculate session expiration
             $expiresAt = $remember
@@ -274,11 +321,11 @@ class AuthController extends Controller
 
             // Prepare response data — mismo perfil completo que devuelve GET /api/auth/me
             // (incluye phone, createdAt y driverLicense) para que el frontend no dependa
-            // de un refresh posterior para ver esos campos.
+            // de un refresh posterior para ver esos campos. El id de la sesión
+            // viaja solo en la cookie HttpOnly.
             $responseData = [
                 'user' => $this->buildUserProfile($authResult->userId),
                 'session' => [
-                    'id' => $authResult->sessionId,
                     'expiresAt' => $expiresAt
                 ]
             ];
@@ -456,6 +503,7 @@ class AuthController extends Controller
                 'status'      => $latestApplication['status'],
                 'reviewNotes' => $latestApplication['review_notes'],
                 'createdAt'   => $latestApplication['created_at'],
+                'services'    => $latestApplication['services'] ?? [],
             ] : null,
         ];
     }
@@ -640,7 +688,12 @@ class AuthController extends Controller
                 );
             }
 
-            $validation = RequestValidator::validateChangePasswordRequest($request);
+            // La nueva contraseña no puede contener el correo ni el nombre de la persona
+            $validation = RequestValidator::validateChangePasswordRequest($request, [
+                'email'      => $user['email'] ?? null,
+                'first_name' => $user['first_name'] ?? null,
+                'last_name'  => $user['last_name'] ?? null,
+            ]);
             if (!$validation['valid']) {
                 return ResponseFormatter::validationError($validation['errors']);
             }
@@ -719,6 +772,11 @@ class AuthController extends Controller
                 return ResponseFormatter::validationError($validation['errors']);
             }
 
+            // CAPTCHA (si está configurado): evita usar el formulario para enviar correos en masa
+            if (!$this->captcha->verify($request->input('captcha_token'), $ipAddress, 'forgot-password')) {
+                return $this->captchaRequiredResponse();
+            }
+
             $this->passwordResetService->requestReset($request->input('email'), $ipAddress);
 
             return ResponseFormatter::success(
@@ -780,6 +838,135 @@ class AuthController extends Controller
             return ResponseFormatter::success(
                 null,
                 'Tu contraseña fue restablecida correctamente. Ya puedes iniciar sesión con tu nueva contraseña.',
+                200
+            );
+
+        } catch (\Exception $e) {
+            return ErrorHandler::handleException($e);
+        }
+    }
+
+    /**
+     * Configuración pública del CAPTCHA para el frontend
+     *
+     * GET /api/auth/captcha
+     *
+     * Dice si el CAPTCHA está activo, la clave pública del widget y si el
+     * inicio de sesión ya lo exige para esta IP (tras varios intentos
+     * fallidos), para mostrarlo desde que carga la página.
+     *
+     * @param Request $request HTTP request
+     * @return Response {enabled: bool, siteKey: string|null, loginRequired: bool}
+     */
+    public function captchaConfig(Request $request): Response
+    {
+        try {
+            $enabled = $this->captcha->isEnabled();
+            $loginRequired = false;
+
+            if ($enabled) {
+                $rateLimitCheck = RateLimiter::check('login', IPValidator::getClientIP($request));
+                $loginRequired = $this->loginNeedsCaptcha(
+                    RateLimiter::MAX_ATTEMPTS - $rateLimitCheck['remaining'],
+                    ['captchaRequired' => false]
+                );
+            }
+
+            return ResponseFormatter::success([
+                'enabled'       => $enabled,
+                'siteKey'       => $enabled ? $this->captcha->siteKey() : null,
+                'loginRequired' => $loginRequired,
+            ], 'Configuración del CAPTCHA', 200);
+
+        } catch (\Exception $e) {
+            return ErrorHandler::handleException($e);
+        }
+    }
+
+    /**
+     * El inicio de sesión exige CAPTCHA tras varios intentos fallidos desde la
+     * IP o contra la cuenta (solo si el CAPTCHA está configurado).
+     *
+     * @param int   $ipFailures Intentos fallidos de la IP en la ventana actual
+     * @param array $throttle   Estado de LoginThrottleService (captchaRequired)
+     */
+    private function loginNeedsCaptcha(int $ipFailures, array $throttle): bool
+    {
+        return $this->captcha->isEnabled()
+            && ($ipFailures >= LoginThrottleService::CAPTCHA_AFTER_FAILURES || $throttle['captchaRequired']);
+    }
+
+    /** 400 con el campo captcha: el formulario muestra (o renueva) el widget */
+    private function captchaRequiredResponse(): Response
+    {
+        return ResponseFormatter::error(
+            'Completa la verificación de seguridad',
+            ['captcha' => [self::CAPTCHA_MESSAGE]],
+            400
+        );
+    }
+
+    /** 429 de una cuenta bloqueada, igual exista o no el correo */
+    private function accountLockedResponse(int $retryAfter): Response
+    {
+        return ResponseFormatter::rateLimitExceeded(
+            $retryAfter,
+            'Por seguridad bloqueamos temporalmente el acceso a esta cuenta por varios intentos fallidos. '
+            . 'Intenta de nuevo en ' . LoginThrottleService::humanDuration($retryAfter)
+            . ' o restablece tu contraseña.'
+        );
+    }
+
+    /**
+     * Revisar una contraseña contra la política, sin guardarla
+     *
+     * POST /api/auth/password-check
+     *
+     * Permite que el formulario de registro avise desde el primer paso si la
+     * contraseña es débil o muy común, con las mismas reglas que se aplican al
+     * crear la cuenta (PasswordPolicy). La contraseña no se guarda ni se
+     * registra en ningún log.
+     *
+     * Body: password y, opcionales, email, first_name y last_name.
+     *
+     * @param Request $request HTTP request
+     * @return Response {valid: bool, errors: string[]}
+     */
+    public function passwordCheck(Request $request): Response
+    {
+        try {
+            $contentTypeValidation = RequestValidator::validateContentType($request, 'POST');
+            if (!$contentTypeValidation['valid']) {
+                return ResponseFormatter::error(
+                    $contentTypeValidation['error'],
+                    null,
+                    $contentTypeValidation['statusCode']
+                );
+            }
+
+            $jsonValidation = RequestValidator::parseJsonBody($request);
+            if (!$jsonValidation['valid']) {
+                return ResponseFormatter::error(
+                    $jsonValidation['error'],
+                    null,
+                    $jsonValidation['statusCode']
+                );
+            }
+
+            $context = [];
+            foreach (['email', 'first_name', 'last_name'] as $key) {
+                $value = $request->input($key);
+                if (is_string($value)) {
+                    $context[$key] = $value;
+                }
+            }
+
+            $password = $request->input('password');
+            $errors = PasswordPolicy::errors(is_string($password) ? $password : '', $context);
+
+            return ResponseFormatter::success(
+                ['valid' => $errors === [], 'errors' => $errors],
+                $errors === [] ? 'La contraseña cumple la política' : 'La contraseña no cumple la política',
                 200
             );
 

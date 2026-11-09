@@ -3,7 +3,7 @@ import { Wrench, ClipboardCheck, Star, FileText, Check, X } from 'lucide-react';
 import AdminLayout, { StatCard } from '../../components/admin/AdminLayout';
 import { Alert, Badge, EmptyState, Modal } from '../../components/ui';
 import { adminService, errorMessage } from '../../../services';
-import type { AdminUser, ApplicationStatus, MechanicApplication, MechanicPerformance } from '@/models';
+import type { AdminUser, ApplicationStatus, MechanicApplication, MechanicPerformance, MechanicServiceStatus } from '@/models';
 import { formatDate, fullName } from '../../format';
 
 const APP_STATUS: Record<ApplicationStatus, { label: string; color: string }> = {
@@ -13,7 +13,16 @@ const APP_STATUS: Record<ApplicationStatus, { label: string; color: string }> = 
   cancelled: { label: 'Cancelada', color: 'bg-gray-500/20 text-gray-400 border-gray-500/30' },
 };
 
-/** Solicitudes para ser mecánico y listado de mecánicos con su desempeño. */
+const SERVICE_STATUS: Record<MechanicServiceStatus, { label: string; color: string }> = {
+  pending: { label: 'En revisión', color: 'text-yellow-400' },
+  approved: { label: 'Aprobado', color: 'text-green-400' },
+  rejected: { label: 'No aprobado', color: 'text-red-400' },
+};
+
+/**
+ * Solicitudes para ser mecánico (o para sumar servicios) y listado de
+ * mecánicos con su desempeño. Cada servicio pedido se aprueba por separado.
+ */
 export default function AdminMechanicsPage() {
   const [tab, setTab] = useState<'applications' | 'mechanics'>('applications');
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | ''>('pending');
@@ -21,6 +30,9 @@ export default function AdminMechanicsPage() {
   const [mechanics, setMechanics] = useState<AdminUser[]>([]);
   const [performance, setPerformance] = useState<Record<number, MechanicPerformance>>({});
   const [selected, setSelected] = useState<MechanicApplication | null>(null);
+  // Servicios marcados para aprobar en la solicitud abierta
+  const [approvedCodes, setApprovedCodes] = useState<string[]>([]);
+  // Nota de la revisión: obligatoria para rechazar o para no aprobar algún servicio
   const [rejectReason, setRejectReason] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -40,11 +52,23 @@ export default function AdminMechanicsPage() {
   useEffect(() => { loadApplications(); }, [loadApplications]);
   useEffect(() => { loadMechanics(); }, [loadMechanics]);
 
+  const openApplication = (application: MechanicApplication) => {
+    setSelected(application);
+    setApprovedCodes(application.services.map(service => service.serviceTypeCode));
+    setRejectReason('');
+    setError('');
+  };
+
+  const toggleService = (code: string) =>
+    setApprovedCodes(prev => (prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]));
+
+  const leavesSomeOut = !!selected && approvedCodes.length < selected.services.length;
+
   const decide = async (approve: boolean) => {
     if (!selected) return;
     setBusy(true);
     const res = approve
-      ? await adminService.approveApplication(selected.id)
+      ? await adminService.approveApplication(selected.id, approvedCodes, rejectReason.trim())
       : await adminService.rejectApplication(selected.id, rejectReason.trim());
     setBusy(false);
     if (!res.success) {
@@ -91,11 +115,12 @@ export default function AdminMechanicsPage() {
                   <div>
                     <p className="text-white font-bold">{fullName(a.applicantFirstName, a.applicantLastName)}</p>
                     <p className="text-sm text-gray-400">{a.certificationTitle ?? 'Sin certificación'} · {a.specialty ?? 'Sin especialidad'}{a.yearsExperience != null && ` · ${a.yearsExperience} años`}</p>
+                    <p className="text-xs text-gray-400">Servicios: {a.services.length > 0 ? a.services.map(service => service.serviceTypeName).join(', ') : '—'}</p>
                     <p className="text-xs text-gray-500">{a.applicantEmail} · enviada {formatDate(a.createdAt)}</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <Badge className={APP_STATUS[a.status].color}>{APP_STATUS[a.status].label}</Badge>
-                    <button onClick={() => { setSelected(a); setRejectReason(''); setError(''); }} className="btn-outline py-1.5 px-3 text-sm">
+                    <button onClick={() => openApplication(a)} className="btn-outline py-1.5 px-3 text-sm">
                       {a.status === 'pending' ? 'Revisar' : 'Ver'}
                     </button>
                   </div>
@@ -113,7 +138,7 @@ export default function AdminMechanicsPage() {
           <div className="card overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-gray-400 border-b border-anthracite-800">
-                <tr><th className="p-3">Mecánico</th><th className="p-3">Especialidad</th><th className="p-3">Calificación</th><th className="p-3">Calificaciones</th><th className="p-3">Estado</th></tr>
+                <tr><th className="p-3">Mecánico</th><th className="p-3">Especialidad</th><th className="p-3">Servicios habilitados</th><th className="p-3">Calificación</th><th className="p-3">Calificaciones</th><th className="p-3">Estado</th></tr>
               </thead>
               <tbody className="divide-y divide-anthracite-800">
                 {mechanics.map(m => {
@@ -122,6 +147,7 @@ export default function AdminMechanicsPage() {
                     <tr key={m.id} className="text-gray-300">
                       <td className="p-3"><p className="text-white font-medium">{fullName(m.firstName, m.lastName)}</p><p className="text-xs text-gray-500">{m.email} · {m.phone ?? 'sin teléfono'}</p></td>
                       <td className="p-3">{perf?.specialty ?? '—'}</td>
+                      <td className="p-3 text-xs">{m.approvedServices.length > 0 ? m.approvedServices.join(', ') : <span className="text-yellow-400">Ninguno</span>}</td>
                       <td className="p-3">{perf ? <span className="text-yellow-400">{perf.averageRating} ★</span> : 'Sin calificaciones'}</td>
                       <td className="p-3">{perf?.totalRatings ?? 0}</td>
                       <td className="p-3">{m.accountStatus === 'active' ? 'Activo' : 'Inactivo'}</td>
@@ -160,18 +186,49 @@ export default function AdminMechanicsPage() {
               )}
             </div>
             {selected.justification && <p className="text-gray-300 bg-dark-800 rounded-xl p-3">{selected.justification}</p>}
+
+            <div className="space-y-2">
+              <p className="text-gray-500 text-xs">
+                Servicios pedidos{selected.status === 'pending' ? ' — marca los que apruebas' : ''}
+              </p>
+              <ul className="space-y-2">
+                {selected.services.map(service => (
+                  <li key={service.serviceTypeCode} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-anthracite-700 bg-dark-800/60 p-3">
+                    {selected.status === 'pending' ? (
+                      <label className="flex items-center gap-2 cursor-pointer text-white">
+                        <input type="checkbox" checked={approvedCodes.includes(service.serviceTypeCode)}
+                          onChange={() => toggleService(service.serviceTypeCode)} className="w-4 h-4 accent-yellow-500" />
+                        {service.serviceTypeName}
+                      </label>
+                    ) : (
+                      <span className="text-white">{service.serviceTypeName} <span className={`text-xs ${SERVICE_STATUS[service.status].color}`}>· {SERVICE_STATUS[service.status].label}</span></span>
+                    )}
+                    {service.supportDocumentUrl ? (
+                      <a href={service.supportDocumentUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-gold-400 hover:underline"><FileText className="w-3.5 h-3.5" /> Ver soporte</a>
+                    ) : (
+                      <span className="text-xs text-gray-500">Sin soporte</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
             {selected.reviewNotes && <p className="text-gray-400">Notas de revisión: {selected.reviewNotes}</p>}
 
             {selected.status === 'pending' && (
               <>
                 <p className="text-xs text-gray-500">Para aprobar, la licencia de conducción del solicitante debe tener fecha de vencimiento vigente.</p>
-                <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Motivo (obligatorio para rechazar)" className="input-field resize-none h-20" />
+                <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
+                  placeholder={leavesSomeOut ? 'Explica por qué no apruebas los servicios sin marcar (obligatorio)' : 'Motivo (obligatorio para rechazar)'}
+                  className="input-field resize-none h-20" />
                 {error && <Alert type="error">{error}</Alert>}
                 <div className="grid grid-cols-2 gap-3">
                   <button disabled={busy || !rejectReason.trim()} onClick={() => decide(false)}
-                    className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-600/20 border border-red-500/40 text-red-300 disabled:opacity-40"><X className="w-4 h-4" /> Rechazar</button>
-                  <button disabled={busy} onClick={() => decide(true)}
-                    className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white disabled:opacity-40"><Check className="w-4 h-4" /> Aprobar</button>
+                    className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-600/20 border border-red-500/40 text-red-300 disabled:opacity-40"><X className="w-4 h-4" /> Rechazar todo</button>
+                  <button disabled={busy || approvedCodes.length === 0 || (leavesSomeOut && !rejectReason.trim())} onClick={() => decide(true)}
+                    className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white disabled:opacity-40">
+                    <Check className="w-4 h-4" /> {leavesSomeOut ? `Aprobar ${approvedCodes.length} de ${selected.services.length}` : 'Aprobar'}
+                  </button>
                 </div>
               </>
             )}

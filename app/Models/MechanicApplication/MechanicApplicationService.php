@@ -11,13 +11,16 @@ use App\Models\Auth\RoleValidator;
  * Servicio de Solicitudes de Mecánico
  *
  * Gestiona el flujo de solicitud + revisión administrativa para obtener el
- * rol `mechanic`. El registro público (AuthService::register()) ya no acepta
- * ningún parámetro de rol — la única vía para obtener `mechanic` es una
- * solicitud aprobada por un administrador a través de este servicio.
+ * rol `mechanic` y los servicios que cada mecánico puede prestar. El registro
+ * público con rol "mecánico" (AuthService::register()) crea la cuenta como
+ * cliente y abre automáticamente una solicitud aquí; el rol `mechanic` solo
+ * se concede cuando un administrador la aprueba.
  *
- * El registro público con rol "mecánico" (AuthService::register()) crea la
- * cuenta como cliente y abre automáticamente una solicitud aquí; el rol
- * `mechanic` solo se concede cuando un administrador la aprueba.
+ * Aprobación por tipo de servicio: cada solicitud pide uno o varios servicios
+ * (tabla `mechanic_application_services`) y el administrador aprueba o
+ * rechaza cada uno. Un mecánico solo ve y acepta solicitudes de los servicios
+ * que tiene aprobados; para sumar otros envía una nueva solicitud
+ * ("ampliación") con los que le faltan.
  *
  * La especialidad, experiencia y certificación se guardan en la solicitud
  * (tabla `mechanic_applications`); el perfil del mecánico las lee de su
@@ -25,6 +28,24 @@ use App\Models\Auth\RoleValidator;
  */
 class MechanicApplicationService
 {
+    /**
+     * SQL de los servicios habilitados de un mecánico: los aprobados dentro
+     * de sus solicitudes aprobadas. Es el único lugar con esta regla; la usan
+     * el listado de solicitudes cercanas, la aceptación, el perfil y el
+     * listado de usuarios del administrador.
+     *
+     * @param string $userId Expresión con el id del mecánico: '?' para pasarlo
+     *                       como parámetro, o una columna de la consulta que
+     *                       la contiene (ej. 'u.id'). Nunca un dato de la petición.
+     */
+    public static function approvedServicesSql(string $userId = '?'): string
+    {
+        return "SELECT mas.service_type_code
+            FROM mechanic_application_services mas
+            JOIN mechanic_applications ma ON ma.id = mas.application_id
+            WHERE ma.user_id = {$userId} AND ma.status = 'approved' AND mas.status = 'approved'";
+    }
+
     /**
      * Slug del único rol que este flujo puede conceder. El ID real del rol
      * siempre se resuelve en base de datos (getMechanicRoleId()) — nunca se
@@ -48,16 +69,20 @@ class MechanicApplicationService
     }
 
     /**
-     * Crea una solicitud para convertirse en mecánico (usa su propia transacción).
+     * Crea una solicitud para convertirse en mecánico o para sumar servicios
+     * (usa su propia transacción).
      *
      * @param int   $userId ID del usuario autenticado (nunca del body)
-     * @param array $data   specialty, years_experience, certification_title,
-     *                      certification_document_url, justification (todos opcionales)
+     * @param array $data   services (códigos, obligatorio), specialty,
+     *                      years_experience, certification_title,
+     *                      certification_document_url, justification
      * @return int          ID de la solicitud creada
      * @throws DomainException 404 si el usuario no existe; 403 si la cuenta no
-     *                          está activa; 409 si ya tiene el rol o ya tiene una
-     *                          solicitud pendiente; 400 si no registró licencia
-     *                          o la tiene vencida
+     *                          está activa o es de un administrador; 409 si ya
+     *                          tiene una solicitud pendiente o ya está
+     *                          habilitado para algún servicio pedido; 400 si
+     *                          no registró licencia, la tiene vencida o pide un
+     *                          servicio que no existe
      */
     public function create(int $userId, array $data): int
     {
@@ -100,21 +125,12 @@ class MechanicApplicationService
             throw new DomainException('Tu cuenta no está activa', 403);
         }
 
-        // Verificado con los roles actuales del usuario dentro de esta misma
-        // transacción (no antes) — un administrador/super_admin no puede
-        // solicitar el rol de mecánico. Se comprueba antes que el rol
-        // mechanic en sí para dar el mensaje correcto: un admin que además
-        // ya fuera mecánico (caso ya cubierto por la siguiente validación)
-        // sigue estando excluido por esta regla igualmente.
+        // Un administrador/super_admin no puede solicitar el rol de mecánico.
         if ($this->roleValidator->hasAnyRole($userId, self::EXCLUDED_ROLE_SLUGS)) {
             throw new DomainException(
                 'Los administradores no pueden solicitar el rol de mecánico',
                 403
             );
-        }
-
-        if ($this->roleValidator->hasRole($userId, self::MECHANIC_ROLE_SLUG)) {
-            throw new DomainException('Ya tienes el rol de mecánico', 409);
         }
 
         // La licencia completa (vencimiento y documento) se exige al
@@ -142,7 +158,9 @@ class MechanicApplicationService
             throw new DomainException('Ya tienes una solicitud pendiente de revisión', 409);
         }
 
-        return Database::insert('mechanic_applications', [
+        $services = $this->resolveRequestedServices($userId, $data['services'] ?? []);
+
+        $applicationId = Database::insert('mechanic_applications', [
             'user_id'                    => $userId,
             'specialty'                  => $data['specialty'] ?? null,
             'years_experience'           => isset($data['years_experience']) ? (int)$data['years_experience'] : null,
@@ -151,6 +169,51 @@ class MechanicApplicationService
             'justification'              => $data['justification'] ?? null,
             'status'                     => 'pending',
         ]);
+
+        foreach ($services as $code) {
+            Database::insert('mechanic_application_services', [
+                'application_id'    => $applicationId,
+                'service_type_code' => $code,
+                'status'            => 'pending',
+            ]);
+        }
+
+        return $applicationId;
+    }
+
+    /**
+     * Revisa los servicios pedidos: deben existir y estar activos, y el
+     * mecánico no puede pedir de nuevo uno que ya tiene aprobado.
+     *
+     * @param array $requested Códigos ya normalizados por el validador
+     * @return string[]        Códigos a registrar
+     * @throws DomainException 400 si falta o no existe alguno; 409 si ya está habilitado
+     */
+    private function resolveRequestedServices(int $userId, array $requested): array
+    {
+        $requested = array_values(array_unique(array_map('strval', $requested)));
+        if ($requested === []) {
+            throw new DomainException('Selecciona al menos un servicio que puedas prestar', 400);
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($requested), '?'));
+        $active = Database::fetchAll(
+            "SELECT code, name FROM service_types WHERE is_active = TRUE AND code IN ({$placeholders})",
+            $requested
+        );
+        $names = array_column($active, 'name', 'code');
+
+        if (count($names) !== count($requested)) {
+            throw new DomainException('Uno de los servicios seleccionados no existe o no está disponible', 400);
+        }
+
+        $alreadyApproved = array_values(array_intersect($requested, $this->getApprovedServiceCodes($userId)));
+        if ($alreadyApproved !== []) {
+            $list = implode(', ', array_map(fn($code) => $names[$code], $alreadyApproved));
+            throw new DomainException("Ya estás habilitado para: {$list}. Quítalo de la solicitud.", 409);
+        }
+
+        return $requested;
     }
 
     /**
@@ -161,7 +224,7 @@ class MechanicApplicationService
      */
     public function attachDocument(int $applicationId, int $userId, string $documentUrl): array
     {
-        $application = $this->getByIdForUser($applicationId, $userId);
+        $application = $this->findOwn($applicationId, $userId);
 
         if ($application['status'] !== 'pending') {
             throw new DomainException('Solo se puede adjuntar el documento a una solicitud pendiente', 409);
@@ -178,18 +241,96 @@ class MechanicApplicationService
     }
 
     /**
-     * Especialidad y certificación vigentes de un mecánico (su solicitud
-     * aprobada más reciente), o null si no tiene ninguna aprobada.
+     * Adjunta (o reemplaza) el soporte de un servicio pedido en una solicitud
+     * propia pendiente, por ejemplo los papeles del vehículo de remolque para
+     * el servicio de grúa. La URL debe venir de POST /api/uploads.
+     *
+     * @throws DomainException 404 si la solicitud no es propia o no pide ese
+     *                          servicio; 409 si ya fue revisada
+     */
+    public function attachServiceDocument(int $applicationId, int $userId, string $serviceCode, string $documentUrl): array
+    {
+        $application = $this->findOwn($applicationId, $userId);
+
+        if ($application['status'] !== 'pending') {
+            throw new DomainException('Solo se puede adjuntar el soporte a una solicitud pendiente', 409);
+        }
+
+        $affected = Database::update(
+            'mechanic_application_services',
+            ['support_document_url' => $documentUrl],
+            'application_id = ? AND service_type_code = ?',
+            [$applicationId, $serviceCode]
+        );
+
+        // MySQL cuenta 0 filas si la URL no cambió: se confirma que la fila exista
+        if ($affected === 0 && Database::fetchOne(
+            'SELECT 1 AS found FROM mechanic_application_services WHERE application_id = ? AND service_type_code = ?',
+            [$applicationId, $serviceCode]
+        ) === null) {
+            throw new DomainException('La solicitud no incluye ese servicio', 404);
+        }
+
+        return $this->getByIdForUser($applicationId, $userId);
+    }
+
+    /**
+     * Especialidad, certificación y servicios habilitados de un mecánico (su
+     * solicitud aprobada más reciente), o null si no tiene ninguna aprobada.
      */
     public function getApprovedProfile(int $userId): ?array
     {
-        return Database::fetchOne(
+        $profile = Database::fetchOne(
             "SELECT specialty, years_experience, certification_title, certification_document_url, reviewed_at AS approved_at
              FROM mechanic_applications
              WHERE user_id = ? AND status = 'approved'
              ORDER BY reviewed_at DESC LIMIT 1",
             [$userId]
         );
+
+        if ($profile === null) {
+            return null;
+        }
+
+        $profile['services'] = $this->getApprovedServices($userId);
+
+        return $profile;
+    }
+
+    /**
+     * Servicios habilitados de un mecánico con su nombre, en orden alfabético.
+     *
+     * @return array<int, array{code: string, name: string}>
+     */
+    public function getApprovedServices(int $userId): array
+    {
+        return Database::fetchAll(
+            'SELECT st.code, st.name FROM service_types st
+             WHERE st.code IN (' . self::approvedServicesSql() . ')
+             ORDER BY st.name',
+            [$userId]
+        );
+    }
+
+    /**
+     * Códigos de los servicios habilitados de un mecánico.
+     *
+     * @return string[]
+     */
+    public function getApprovedServiceCodes(int $userId): array
+    {
+        return array_column(Database::fetchAll(self::approvedServicesSql(), [$userId]), 'service_type_code');
+    }
+
+    /**
+     * Verdadero si el mecánico tiene aprobado ese tipo de servicio.
+     */
+    public function isApprovedFor(int $userId, string $serviceCode): bool
+    {
+        return Database::fetchOne(
+            self::approvedServicesSql() . ' AND mas.service_type_code = ? LIMIT 1',
+            [$userId, $serviceCode]
+        ) !== null;
     }
 
     /**
@@ -198,18 +339,18 @@ class MechanicApplicationService
      * volver a solicitar si corresponde.
      *
      * @param int $userId ID del usuario autenticado
-     * @return array       Lista de solicitudes
+     * @return array       Lista de solicitudes, cada una con sus servicios
      */
     public function getByUser(int $userId): array
     {
-        return Database::fetchAll(
+        return $this->withServices(Database::fetchAll(
             'SELECT * FROM mechanic_applications WHERE user_id = ? ORDER BY created_at DESC',
             [$userId]
-        );
+        ));
     }
 
     /**
-     * Obtiene una solicitud propia por ID.
+     * Obtiene una solicitud propia por ID, con sus servicios.
      *
      * La consulta combina id+user_id en el mismo WHERE — mismo patrón anti-IDOR
      * que PQRService::getByIdForUser(): una solicitud ajena responde 404, igual
@@ -224,16 +365,7 @@ class MechanicApplicationService
      */
     public function getByIdForUser(int $applicationId, int $userId): array
     {
-        $application = Database::fetchOne(
-            'SELECT * FROM mechanic_applications WHERE id = ? AND user_id = ?',
-            [$applicationId, $userId]
-        );
-
-        if ($application === null) {
-            throw new DomainException('Solicitud no encontrada', 404);
-        }
-
-        return $application;
+        return $this->withServices([$this->findOwn($applicationId, $userId)])[0];
     }
 
     /**
@@ -247,7 +379,7 @@ class MechanicApplicationService
      */
     public function cancel(int $applicationId, int $userId): array
     {
-        $application = $this->getByIdForUser($applicationId, $userId);
+        $application = $this->findOwn($applicationId, $userId);
 
         if ($application['status'] !== 'pending') {
             throw new DomainException('Solo se pueden cancelar solicitudes pendientes', 409);
@@ -320,14 +452,14 @@ class MechanicApplicationService
         $sql .= ' ORDER BY ma.created_at DESC LIMIT ' . max(0, $limit) . ' OFFSET ' . max(0, $offset);
 
         return [
-            'items' => Database::fetchAll($sql, $params),
+            'items' => $this->withServices(Database::fetchAll($sql, $params)),
             'total' => $total,
         ];
     }
 
     /**
-     * Aprueba una solicitud pendiente: asigna el rol `mechanic` al
-     * solicitante.
+     * Aprueba una solicitud pendiente: aprueba los servicios elegidos, rechaza
+     * los demás y asigna el rol `mechanic` si el solicitante aún no lo tenía.
      *
      * Este método es el ÚNICO lugar de todo el sistema donde se hace
      * `INSERT INTO user_roles` con el rol `mechanic` para un usuario que no
@@ -337,17 +469,20 @@ class MechanicApplicationService
      * $adminUserId (el usuario autenticado que hace la llamada), nunca del
      * body de la petición.
      *
-     * @param int $applicationId ID de la solicitud
-     * @param int $adminUserId   ID del administrador autenticado
-     * @return array              Solicitud actualizada
+     * @param int           $applicationId    ID de la solicitud
+     * @param int           $adminUserId      ID del administrador autenticado
+     * @param string[]|null $approvedServices Servicios que se aprueban (null: todos los pedidos)
+     * @param string|null   $notes            Nota de la revisión (obligatoria si se rechaza alguno)
+     * @return array                           Solicitud actualizada, con sus servicios
      * @throws DomainException    404 si no existe; 403 si el admin intenta
      *                             aprobar su propia solicitud; 409 si ya no está
-     *                             pendiente, si el estado cambió concurrentemente,
-     *                             o si el usuario ya tiene el rol; 400 si el
-     *                             usuario objetivo ya no está activo o su licencia
-     *                             ya no es válida
+     *                             pendiente o si el estado cambió concurrentemente;
+     *                             400 si el usuario objetivo ya no está activo, su
+     *                             licencia ya no es válida, no se aprueba ningún
+     *                             servicio, se aprueba uno que no se pidió o
+     *                             falta la nota de los rechazados
      */
-    public function approve(int $applicationId, int $adminUserId): array
+    public function approve(int $applicationId, int $adminUserId, ?array $approvedServices = null, ?string $notes = null): array
     {
         Database::beginTransaction();
         try {
@@ -394,21 +529,40 @@ class MechanicApplicationService
                 throw new DomainException('Para aprobar, la licencia del solicitante debe tener número y una fecha de vencimiento vigente', 400);
             }
 
-            $mechanicRoleId = $this->getMechanicRoleId();
+            // Servicios: los elegidos se aprueban y el resto se rechaza
+            $requested = array_column(Database::fetchAll(
+                'SELECT service_type_code FROM mechanic_application_services WHERE application_id = ?',
+                [$applicationId]
+            ), 'service_type_code');
 
-            try {
-                Database::insert('user_roles', [
-                    'user_id'     => $application['user_id'],
-                    'role_id'     => $mechanicRoleId,
-                    'assigned_by' => $adminUserId,
-                    'assigned_at' => date('Y-m-d H:i:s'),
-                    'is_active'   => true,
-                ]);
-            } catch (DatabaseException $e) {
-                if (str_contains($e->getMessage(), 'Duplicate entry')) {
-                    throw new DomainException('El usuario ya tiene este rol', 409);
-                }
-                throw $e;
+            $approved = $approvedServices === null
+                ? $requested
+                : array_values(array_unique(array_map('strval', $approvedServices)));
+
+            if ($approved === []) {
+                throw new DomainException('Selecciona al menos un servicio para aprobar. Para negarlos todos, rechaza la solicitud.', 400);
+            }
+
+            if (array_diff($approved, $requested) !== []) {
+                throw new DomainException('Solo puedes aprobar servicios que hacen parte de la solicitud', 400);
+            }
+
+            $rejected = array_values(array_diff($requested, $approved));
+            $notes = $notes !== null && trim($notes) !== '' ? trim($notes) : null;
+            if ($rejected !== [] && $notes === null) {
+                throw new DomainException('Explica en la nota por qué no apruebas todos los servicios', 400);
+            }
+
+            $this->setServicesStatus($applicationId, $approved, 'approved');
+            $this->setServicesStatus($applicationId, $rejected, 'rejected');
+
+            // Quien ya es mecánico y amplía sus servicios conserva su rol. Los
+            // roles se leen frescos: la caché de RoleValidator puede venir de
+            // una aprobación anterior hecha con esta misma instancia.
+            $applicantId = (int)$application['user_id'];
+            $this->roleValidator->clearCache($applicantId);
+            if (!$this->roleValidator->hasRole($applicantId, self::MECHANIC_ROLE_SLUG)) {
+                $this->grantMechanicRole($applicantId, $adminUserId);
             }
 
             // El WHERE repite status='pending' para que la aprobación sea
@@ -418,9 +572,10 @@ class MechanicApplicationService
             $affected = Database::update(
                 'mechanic_applications',
                 [
-                    'status'      => 'approved',
-                    'reviewed_by' => $adminUserId,
-                    'reviewed_at' => date('Y-m-d H:i:s'),
+                    'status'       => 'approved',
+                    'reviewed_by'  => $adminUserId,
+                    'reviewed_at'  => date('Y-m-d H:i:s'),
+                    'review_notes' => $notes,
                 ],
                 'id = ? AND status = ?',
                 [$applicationId, 'pending']
@@ -435,7 +590,7 @@ class MechanicApplicationService
 
             Database::commit();
 
-            return Database::fetchOne('SELECT * FROM mechanic_applications WHERE id = ?', [$applicationId]);
+            return $this->getById($applicationId);
         } catch (\Exception $e) {
             Database::rollback();
             throw $e;
@@ -443,7 +598,7 @@ class MechanicApplicationService
     }
 
     /**
-     * Rechaza una solicitud pendiente.
+     * Rechaza una solicitud pendiente y todos los servicios que pedía.
      *
      * `reviewed_by` se toma exclusivamente de $adminUserId; el motivo queda en
      * `review_notes` (obligatorio para un rechazo, ver CHECK de la tabla).
@@ -491,11 +646,128 @@ class MechanicApplicationService
                 );
             }
 
+            Database::update(
+                'mechanic_application_services',
+                ['status' => 'rejected'],
+                'application_id = ?',
+                [$applicationId]
+            );
+
             Database::commit();
 
-            return Database::fetchOne('SELECT * FROM mechanic_applications WHERE id = ?', [$applicationId]);
+            return $this->getById($applicationId);
         } catch (\Exception $e) {
             Database::rollback();
+            throw $e;
+        }
+    }
+
+    /**
+     * Solicitud propia sin sus servicios, para las validaciones internas.
+     *
+     * @throws DomainException 404 si no existe o no pertenece al usuario
+     */
+    private function findOwn(int $applicationId, int $userId): array
+    {
+        $application = Database::fetchOne(
+            'SELECT * FROM mechanic_applications WHERE id = ? AND user_id = ?',
+            [$applicationId, $userId]
+        );
+
+        if ($application === null) {
+            throw new DomainException('Solicitud no encontrada', 404);
+        }
+
+        return $application;
+    }
+
+    /** Solicitud por ID con sus servicios (después de revisarla) */
+    private function getById(int $applicationId): array
+    {
+        return $this->withServices([
+            Database::fetchOne('SELECT * FROM mechanic_applications WHERE id = ?', [$applicationId]),
+        ])[0];
+    }
+
+    /**
+     * Agrega a cada solicitud la lista de servicios que pide, con su nombre,
+     * estado y soporte. Es el único lugar que arma esa lista: la usan todas
+     * las respuestas que devuelven solicitudes.
+     *
+     * @param array $applications Filas de mechanic_applications
+     * @return array               Las mismas filas con la clave `services`
+     */
+    private function withServices(array $applications): array
+    {
+        if ($applications === []) {
+            return [];
+        }
+
+        $ids = array_map(fn($application) => (int)$application['id'], $applications);
+        $placeholders = implode(', ', array_fill(0, count($ids), '?'));
+        $rows = Database::fetchAll(
+            "SELECT mas.application_id, mas.service_type_code, st.name AS service_type_name,
+                    mas.status, mas.support_document_url
+             FROM mechanic_application_services mas
+             JOIN service_types st ON st.code = mas.service_type_code
+             WHERE mas.application_id IN ({$placeholders})
+             ORDER BY st.name",
+            $ids
+        );
+
+        $byApplication = [];
+        foreach ($rows as $row) {
+            $applicationId = (int)$row['application_id'];
+            unset($row['application_id']);
+            $byApplication[$applicationId][] = $row;
+        }
+
+        return array_map(function (array $application) use ($byApplication) {
+            $application['services'] = $byApplication[(int)$application['id']] ?? [];
+            return $application;
+        }, $applications);
+    }
+
+    /**
+     * Cambia el estado de varios servicios de una solicitud.
+     *
+     * @param string[] $codes Códigos de servicio (nada que hacer si está vacío)
+     */
+    private function setServicesStatus(int $applicationId, array $codes, string $status): void
+    {
+        if ($codes === []) {
+            return;
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($codes), '?'));
+        Database::update(
+            'mechanic_application_services',
+            ['status' => $status],
+            "application_id = ? AND service_type_code IN ({$placeholders})",
+            array_merge([$applicationId], $codes)
+        );
+    }
+
+    /**
+     * Asigna el rol `mechanic` (dentro de la transacción de approve()).
+     *
+     * @throws DomainException 409 si otro proceso lo asignó en paralelo
+     */
+    private function grantMechanicRole(int $userId, int $adminUserId): void
+    {
+        try {
+            Database::insert('user_roles', [
+                'user_id'     => $userId,
+                'role_id'     => $this->getMechanicRoleId(),
+                'assigned_by' => $adminUserId,
+                'assigned_at' => date('Y-m-d H:i:s'),
+                'is_active'   => true,
+            ]);
+            $this->roleValidator->clearCache($userId);
+        } catch (DatabaseException $e) {
+            if (str_contains($e->getMessage(), 'Duplicate entry')) {
+                throw new DomainException('El usuario ya tiene este rol', 409);
+            }
             throw $e;
         }
     }

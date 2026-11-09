@@ -13,7 +13,7 @@ class MigrationRunner
     private string $migrationsTable = 'migrations';
     private array $output = [];
 
-    public function __construct(string $migrationsPath = null)
+    public function __construct(?string $migrationsPath = null)
     {
         $this->migrationsPath = $migrationsPath ?? __DIR__ . '/../../database/migrations';
     }

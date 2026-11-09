@@ -7,7 +7,9 @@ use App\Models\Auth\PasswordHasher;
 /**
  * Datos de demostración
  *
- * Crea una cuenta por rol, un mecánico aprobado, un vehículo con documentos,
+ * Crea una cuenta por rol, un mecánico aprobado para todos los servicios
+ * menos la grúa (así se ve la aprobación por tipo de servicio), un vehículo
+ * con documentos,
  * inventario con proveedores y un ingreso de mercancía, y un servicio
  * completado con repuestos, calificaciones, encuesta y pago. Es idempotente:
  * si la cuenta del administrador de demo ya existe, no hace nada.
@@ -76,7 +78,7 @@ class DatabaseSeeder extends Seeder
             'driver_license_uploaded_at'     => date('Y-m-d H:i:s'),
         ]);
 
-        $this->insert('mechanic_applications', [
+        $applicationId = $this->insert('mechanic_applications', [
             'user_id'             => $mechanic,
             'specialty'           => 'Mecánica General',
             'years_experience'    => 8,
@@ -84,8 +86,17 @@ class DatabaseSeeder extends Seeder
             'status'              => 'approved',
             'reviewed_by'         => $admin,
             'reviewed_at'         => date('Y-m-d H:i:s'),
-            'review_notes'        => 'Documentación verificada',
+            'review_notes'        => 'Documentación verificada. La grúa requiere los papeles del vehículo de remolque.',
         ]);
+
+        foreach (['fuel' => 'approved', 'tire' => 'approved', 'battery' => 'approved', 'engine' => 'approved',
+                  'lockout' => 'approved', 'other' => 'approved', 'tow' => 'rejected'] as $code => $status) {
+            $this->insert('mechanic_application_services', [
+                'application_id'    => $applicationId,
+                'service_type_code' => $code,
+                'status'            => $status,
+            ]);
+        }
 
         return ['admin' => $admin, 'customer' => $customer, 'mechanic' => $mechanic];
     }

@@ -254,6 +254,31 @@ class RequestValidatorTest extends TestCase
         $this->assertArrayHasKey('new_password_confirmation', $result['errors']);
     }
 
+    public function testValidateChangePasswordRequestAppliesThePasswordPolicyWithThePersonsData(): void
+    {
+        $request = $this->makeRequest('PUT', body: [
+            'current_password' => 'Old12345!', 'new_password' => 'Laura#Segura2026',
+            'new_password_confirmation' => 'Laura#Segura2026',
+        ]);
+
+        $result = RequestValidator::validateChangePasswordRequest($request, ['first_name' => 'Laura']);
+
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('no debe contener tu nombre', $result['errors']['new_password'][0]);
+    }
+
+    public function testValidateChangePasswordRequestRejectsReusingTheCurrentPassword(): void
+    {
+        $request = $this->makeRequest('PUT', body: [
+            'current_password' => 'Tr3n-Azul#Lluvia', 'new_password' => 'Tr3n-Azul#Lluvia',
+            'new_password_confirmation' => 'Tr3n-Azul#Lluvia',
+        ]);
+
+        $result = RequestValidator::validateChangePasswordRequest($request);
+
+        $this->assertSame(['La nueva contraseña debe ser diferente de la actual'], $result['errors']['new_password']);
+    }
+
     public function testValidateChangePasswordRequestSucceedsWithValidFields(): void
     {
         $request = $this->makeRequest('PUT', body: [

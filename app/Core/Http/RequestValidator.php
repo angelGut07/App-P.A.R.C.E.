@@ -3,6 +3,7 @@
 namespace App\Core\Http;
 
 use App\Core\Request;
+use App\Models\Auth\PasswordPolicy;
 
 /**
  * Validador de Solicitudes
@@ -60,7 +61,10 @@ class RequestValidator
     }
 
     /**
-     * Valida la solidez de la contraseña
+     * Valida el formato básico de una contraseña al iniciar sesión (longitud
+     * y bytes nulos). Las reglas para crear o cambiar una contraseña están en
+     * PasswordPolicy: no se aplican aquí para que las cuentas creadas con
+     * reglas anteriores puedan seguir entrando.
      *
      * Requisito 7.2: Verificar que la contraseña sea una cadena no vacía de al menos 8 caracteres
      *
@@ -329,10 +333,15 @@ class RequestValidator
             $errors['email'] = ['El correo electrónico no es válido'];
         }
 
-        // Validar la contraseña
-        $password = $request->input('password');
-        if (!self::isValidPassword($password)) {
-            $errors['password'] = ['La contraseña debe tener entre 8 y 128 caracteres'];
+        // Validar la contraseña con la política (sin contener el correo ni el nombre)
+        $password = (string)$request->input('password');
+        $passwordErrors = PasswordPolicy::errors($password, [
+            'email'      => $email,
+            'first_name' => $request->input('first_name'),
+            'last_name'  => $request->input('last_name'),
+        ]);
+        if ($passwordErrors !== []) {
+            $errors['password'] = $passwordErrors;
         }
 
         // Validar la confirmación de contraseña
@@ -421,9 +430,10 @@ class RequestValidator
      * Valida una solicitud de cambio de contraseña
      *
      * @param Request $request Solicitud HTTP
+     * @param array   $context Correo y nombre de la persona (PasswordPolicy)
      * @return array ['valid' => bool, 'errors' => array]
      */
-    public static function validateChangePasswordRequest(Request $request): array
+    public static function validateChangePasswordRequest(Request $request, array $context = []): array
     {
         $errors = [];
 
@@ -443,9 +453,12 @@ class RequestValidator
             ];
         }
 
-        $newPassword = $request->input('new_password');
-        if (!self::isValidPassword($newPassword)) {
-            $errors['new_password'] = ['La contraseña debe tener entre 8 y 128 caracteres'];
+        $newPassword = (string)$request->input('new_password');
+        $passwordErrors = PasswordPolicy::errors($newPassword, $context);
+        if ($passwordErrors !== []) {
+            $errors['new_password'] = $passwordErrors;
+        } elseif ($newPassword === (string)$request->input('current_password')) {
+            $errors['new_password'] = ['La nueva contraseña debe ser diferente de la actual'];
         }
 
         $newPasswordConfirmation = $request->input('new_password_confirmation');
@@ -477,7 +490,7 @@ class RequestValidator
         if (empty($email) || !self::isValidEmail($email)) {
             return [
                 'valid' => false,
-                'errors' => ['email' => ['A valid email is required']]
+                'errors' => ['email' => ['Ingresa un correo electrónico válido']]
             ];
         }
 
@@ -510,9 +523,11 @@ class RequestValidator
             ];
         }
 
-        $newPassword = $request->input('new_password');
-        if (!self::isValidPassword($newPassword)) {
-            $errors['new_password'] = ['La contraseña debe tener entre 8 y 128 caracteres'];
+        // El nombre y el correo del dueño del enlace los revisa PasswordResetService
+        $newPassword = (string)$request->input('new_password');
+        $passwordErrors = PasswordPolicy::errors($newPassword);
+        if ($passwordErrors !== []) {
+            $errors['new_password'] = $passwordErrors;
         }
 
         if ($newPassword !== $request->input('new_password_confirmation')) {

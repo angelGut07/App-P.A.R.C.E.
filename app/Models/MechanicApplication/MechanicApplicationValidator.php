@@ -17,6 +17,12 @@ class MechanicApplicationValidator
      */
     private const VALID_STATUSES = ['pending', 'approved', 'rejected', 'cancelled'];
 
+    /** Forma de un código de service_types (fuel, tire, battery…) */
+    private const SERVICE_CODE_PATTERN = '/^[a-z_]{2,20}$/';
+
+    /** Tope de servicios por solicitud (hay 7 tipos de servicio) */
+    private const MAX_SERVICES = 20;
+
     /**
      * Valida los datos para crear una solicitud de mecánico.
      *
@@ -49,7 +55,45 @@ class MechanicApplicationValidator
         if ($request->input('years_experience') !== null && $request->input('years_experience') !== '') {
             $data['years_experience'] = $request->input('years_experience');
         }
+        $services = self::normalizeServiceCodes($request->input('services'));
+        if ($services !== null) {
+            $data['services'] = $services;
+        }
         return $data;
+    }
+
+    /**
+     * Códigos de servicio en minúsculas y sin repetir, o null si el valor no
+     * es una lista. La existencia de cada código la revisa el servicio.
+     */
+    private static function normalizeServiceCodes(mixed $value): ?array
+    {
+        if (!is_array($value)) {
+            return null;
+        }
+
+        $codes = [];
+        foreach ($value as $item) {
+            $codes[] = is_scalar($item) ? strtolower(trim((string)$item)) : '';
+        }
+
+        return array_values(array_unique($codes));
+    }
+
+    /** Lista de códigos con forma válida y dentro del tope */
+    private static function areValidServiceCodes(array $codes): bool
+    {
+        if (count($codes) > self::MAX_SERVICES) {
+            return false;
+        }
+
+        foreach ($codes as $code) {
+            if (!preg_match(self::SERVICE_CODE_PATTERN, $code)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -87,7 +131,51 @@ class MechanicApplicationValidator
             $errors['justification'] = 'La justificación no debe superar los 2000 caracteres';
         }
 
+        if (empty($data['services'])) {
+            $errors['services'] = 'Selecciona al menos un servicio que puedas prestar';
+        } elseif (!self::areValidServiceCodes($data['services'])) {
+            $errors['services'] = 'Hay servicios no válidos en la solicitud';
+        }
+
         return $errors;
+    }
+
+    /**
+     * Valida los datos para aprobar una solicitud (administrador):
+     * approved_services es opcional (sin él se aprueban todos los pedidos) y
+     * review_notes explica los servicios rechazados.
+     *
+     * @param Request $request Solicitud HTTP
+     * @return array           ['valid' => bool, 'errors' => array, 'data' => array]
+     */
+    public static function validateApproveRequest(Request $request): array
+    {
+        $errors = [];
+        $data = ['approved_services' => null, 'review_notes' => null];
+
+        if ($request->input('approved_services') !== null) {
+            $services = self::normalizeServiceCodes($request->input('approved_services'));
+            if ($services === null || $services === [] || !self::areValidServiceCodes($services)) {
+                $errors['approved_services'] = 'Selecciona al menos un servicio válido para aprobar';
+            } else {
+                $data['approved_services'] = $services;
+            }
+        }
+
+        $notes = $request->input('review_notes');
+        if ($notes !== null && !is_string($notes)) {
+            $errors['review_notes'] = 'La nota de revisión no es válida';
+        } elseif (is_string($notes) && mb_strlen($notes) > 1000) {
+            $errors['review_notes'] = 'La nota de revisión no debe superar los 1000 caracteres';
+        } elseif (is_string($notes) && trim($notes) !== '') {
+            $data['review_notes'] = trim($notes);
+        }
+
+        return [
+            'valid'  => empty($errors),
+            'errors' => $errors,
+            'data'   => $data,
+        ];
     }
 
     /**

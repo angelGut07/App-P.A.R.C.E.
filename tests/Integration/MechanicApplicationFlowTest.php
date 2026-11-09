@@ -49,7 +49,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
             '127.0.0.1',
             'PHPUnit-Integration',
             null,
-            ['certification_title' => 'Técnico automotriz']
+            ['certification_title' => 'Técnico automotriz', 'services' => ['battery', 'tire']]
         );
 
         $this->assertTrue($result->success);
@@ -72,7 +72,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
         $userId = $this->createUser();
         $this->setLicense($userId);
 
-        $applicationId = $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Tengo experiencia como mecanico automotriz certificado.']);
+        $applicationId = $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Tengo experiencia como mecanico automotriz certificado.']);
 
         $app = $this->service->getByIdForUser($applicationId, $userId);
         $this->assertSame('pending', $app['status']);
@@ -85,7 +85,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
         $this->setLicense($userId, complete: false);
 
         $this->assertDomainException(400, function () use ($userId) {
-            $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+            $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
         });
     }
 
@@ -95,7 +95,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
         $this->setLicense($userId, '-10 days');
 
         $this->assertDomainException(400, function () use ($userId) {
-            $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+            $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
         });
     }
 
@@ -105,19 +105,77 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
         $this->setLicense($userId);
 
         $this->assertDomainException(403, function () use ($userId) {
-            $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+            $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
         });
     }
 
-    public function testCreateFailsWhenUserAlreadyHasMechanicRole(): void
+    public function testCreateFailsWhenTheMechanicAlreadyHasTheRequestedService(): void
     {
         $userId = $this->createUser();
         $this->setLicense($userId);
-        $this->assignRole($userId, 'mechanic');
+        $admin = $this->createUser();
+        $this->assignRole($admin, 'administrator');
+        $this->service->approve($this->createPendingApplication($userId), $admin);
 
         $this->assertDomainException(409, function () use ($userId) {
-            $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+            $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
         });
+    }
+
+    public function testMechanicCanRequestMoreServicesAndKeepsItsRoleWhenApproved(): void
+    {
+        $userId = $this->createUser();
+        $this->setLicense($userId);
+        $admin = $this->createUser();
+        $this->assignRole($admin, 'administrator');
+        $this->service->approve($this->createPendingApplication($userId), $admin);
+
+        // Ampliación: pide la grúa, que aún no tiene
+        $extensionId = $this->service->create($userId, ['services' => ['tow'], 'certification_title' => 'Técnico automotriz']);
+        $this->service->approve($extensionId, $admin);
+
+        $this->assertSame(1, $this->countRoleAssignments($userId, 'mechanic'));
+        $this->assertSame(['battery', 'tow'], $this->sorted($this->service->getApprovedServiceCodes($userId)));
+    }
+
+    public function testApproveCanApproveSomeServicesAndRejectTheRestWithANote(): void
+    {
+        $userId = $this->createUser();
+        $this->setLicense($userId);
+        $admin = $this->createUser();
+        $this->assignRole($admin, 'administrator');
+        $applicationId = $this->createPendingApplication($userId, services: ['battery', 'tow']);
+
+        $this->assertDomainException(400, function () use ($applicationId, $admin) {
+            $this->service->approve($applicationId, $admin, ['battery']); // sin nota para la grúa
+        });
+
+        $result = $this->service->approve($applicationId, $admin, ['battery'], 'Falta la tarjeta de la grúa');
+
+        $this->assertSame('approved', $result['status']);
+        $this->assertSame(['battery' => 'approved', 'tow' => 'rejected'], $this->serviceStatuses($applicationId));
+        $this->assertTrue($this->service->isApprovedFor($userId, 'battery'));
+        $this->assertFalse($this->service->isApprovedFor($userId, 'tow'));
+    }
+
+    public function testRejectRejectsEveryRequestedService(): void
+    {
+        $userId = $this->createUser();
+        $this->setLicense($userId);
+        $admin = $this->createUser();
+        $this->assignRole($admin, 'administrator');
+        $applicationId = $this->createPendingApplication($userId, services: ['battery', 'tire']);
+
+        $this->service->reject($applicationId, $admin, 'Documentación incompleta');
+
+        $this->assertSame(['battery' => 'rejected', 'tire' => 'rejected'], $this->serviceStatuses($applicationId));
+        $this->assertSame([], $this->service->getApprovedServiceCodes($userId));
+    }
+
+    private function sorted(array $values): array
+    {
+        sort($values);
+        return $values;
     }
 
     public function testCreateFailsForAdministrator(): void
@@ -127,7 +185,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
         $this->assignRole($userId, 'administrator');
 
         $this->assertDomainException(403, function () use ($userId) {
-            $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+            $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
         });
 
         // No debe haberse creado ninguna fila ni tocado user_roles.
@@ -143,7 +201,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
         $this->assignRole($userId, 'super_admin');
 
         $this->assertDomainException(403, function () use ($userId) {
-            $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+            $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
         });
 
         $this->assertFalse($this->hasRole($userId, 'mechanic'));
@@ -155,10 +213,10 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
     {
         $userId = $this->createUser();
         $this->setLicense($userId);
-        $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Primera justificacion suficientemente larga.']);
+        $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Primera justificacion suficientemente larga.']);
 
         $this->assertDomainException(409, function () use ($userId) {
-            $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Segunda justificacion suficientemente larga.']);
+            $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Segunda justificacion suficientemente larga.']);
         });
     }
 
@@ -171,7 +229,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
     {
         $owner = $this->createUser();
         $this->setLicense($owner);
-        $applicationId = $this->service->create($owner, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+        $applicationId = $this->service->create($owner, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
         $stranger = $this->createUser();
 
         $this->assertDomainException(404, function () use ($applicationId, $stranger) {
@@ -183,7 +241,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
     {
         $owner = $this->createUser();
         $this->setLicense($owner);
-        $applicationId = $this->service->create($owner, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+        $applicationId = $this->service->create($owner, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
         $stranger = $this->createUser();
 
         $this->assertDomainException(404, function () use ($applicationId, $stranger) {
@@ -196,7 +254,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
         $stranger = $this->createUser();
         $owner = $this->createUser();
         $this->setLicense($owner);
-        $applicationId = $this->service->create($owner, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+        $applicationId = $this->service->create($owner, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
 
         $messageForNonexistentId = null;
         try {
@@ -224,7 +282,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
     {
         $userId = $this->createUser();
         $this->setLicense($userId);
-        $applicationId = $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+        $applicationId = $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
 
         $result = $this->service->cancel($applicationId, $userId);
 
@@ -262,7 +320,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
     {
         $userId = $this->createUser();
         $this->setLicense($userId);
-        $applicationId = $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+        $applicationId = $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
         $this->service->cancel($applicationId, $userId);
 
         $this->assertDomainException(409, function () use ($applicationId, $userId) {
@@ -278,7 +336,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
     {
         $userId = $this->createUser();
         $this->setLicense($userId);
-        $applicationId = $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+        $applicationId = $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
         $admin = $this->createUser();
         $this->assignRole($admin, 'administrator');
 
@@ -292,7 +350,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
     {
         $userId = $this->createUser();
         $this->setLicense($userId);
-        $applicationId = $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+        $applicationId = $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
         $superAdmin = $this->createUser();
         $this->assignRole($superAdmin, 'super_admin');
 
@@ -334,7 +392,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
     {
         $userId = $this->createUser();
         $this->setLicense($userId);
-        $applicationId = $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+        $applicationId = $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
 
         $this->assertDomainException(403, function () use ($applicationId, $userId) {
             $this->service->approve($applicationId, $userId);
@@ -347,7 +405,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
     {
         $userId = $this->createUser();
         $this->setLicense($userId);
-        $applicationId = $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+        $applicationId = $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
 
         // El usuario se suspende DESPUÉS de aplicar, antes de que el admin revise.
         Database::update('users', ['account_status' => 'suspended'], 'id = ?', [$userId]);
@@ -364,7 +422,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
     {
         $userId = $this->createUser();
         $this->setLicense($userId, '+1 day'); // vigente al momento de aplicar
-        $applicationId = $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+        $applicationId = $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
 
         // La licencia vence DESPUÉS de aplicar, antes de que el admin revise.
         $this->setLicense($userId, '-1 day');
@@ -381,7 +439,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
     {
         $userId = $this->createUser();
         $this->setLicense($userId);
-        $applicationId = $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+        $applicationId = $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
         $admin = $this->createUser();
         $this->assignRole($admin, 'administrator');
 
@@ -466,7 +524,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
     {
         $userId = $this->createUser();
         $this->setLicense($userId);
-        $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+        $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
 
         $this->assertFalse($this->hasRole($userId, 'mechanic'));
     }
@@ -486,7 +544,7 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
     {
         $userId = $this->createUser();
         $this->setLicense($userId);
-        $applicationId = $this->service->create($userId, ['certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
+        $applicationId = $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
         $this->service->cancel($applicationId, $userId);
 
         $this->assertFalse($this->hasRole($userId, 'mechanic'));

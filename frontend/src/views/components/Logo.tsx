@@ -2,9 +2,11 @@ import { motion } from 'framer-motion';
 
 interface LogoProps {
   size?: 'sm' | 'md' | 'lg';
+  /** Muestra el nombre "P.A.R.C.E" junto a la imagen */
   showText?: boolean;
 }
 
+/** Logo de la plataforma con una animación corta de entrada. */
 export default function Logo({ size = 'md', showText = true }: LogoProps) {
   const sizes = {
     sm: 'w-8 h-8',

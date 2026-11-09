@@ -127,6 +127,14 @@ class App
             if (!(error_reporting() & $severity)) {
                 return false;
             }
+            // Un aviso de "obsoleto" anuncia un cambio de una versión futura de
+            // PHP, no un fallo de esta petición: se registra para corregirlo y
+            // la petición sigue. Convertirlo en excepción tumbaría la app
+            // entera al actualizar PHP (las pruebas sí fallan con ellos).
+            if ($severity === E_DEPRECATED || $severity === E_USER_DEPRECATED) {
+                error_log("Aviso de PHP obsoleto: {$message} en {$file}:{$line}");
+                return true;
+            }
             throw new \ErrorException($message, 0, $severity, $file, $line);
         });
 

@@ -42,13 +42,36 @@ export interface MechanicProfile {
   certificationTitle: string | null;
   certificationDocumentUrl: string | null;
   approvedAt: string | null;
+  /** Servicios que un administrador le aprobó: solo ve y acepta solicitudes de estos */
+  services: { code: EmergencyType; name: string }[];
 }
 
 export type ApplicationStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 
+/** Decisión del administrador sobre cada servicio pedido */
+export type MechanicServiceStatus = 'pending' | 'approved' | 'rejected';
+
+/** Servicio pedido en una solicitud de mecánico */
+export interface MechanicApplicationServiceItem {
+  serviceTypeCode: EmergencyType;
+  serviceTypeName: string;
+  status: MechanicServiceStatus;
+  /** Soporte del servicio (p. ej. papeles de la grúa); ausente si no se adjuntó */
+  supportDocumentUrl?: string | null;
+}
+
 export interface RatingAverage {
   average: number | null;
   count: number;
+}
+
+/** GET /api/auth/captcha */
+export interface CaptchaConfig {
+  enabled: boolean;
+  /** Clave pública del widget de Turnstile */
+  siteKey: string | null;
+  /** El inicio de sesión ya exige el CAPTCHA para esta conexión */
+  loginRequired: boolean;
 }
 
 export interface UserProfile {
@@ -75,6 +98,7 @@ export interface UserProfile {
     status: ApplicationStatus;
     reviewNotes: string | null;
     createdAt: string;
+    services: MechanicApplicationServiceItem[];
   } | null;
 }
 
@@ -101,6 +125,7 @@ export interface MechanicApplication {
   driverLicenseDocumentUrl?: string | null;
   reviewerFirstName?: string | null;
   reviewerLastName?: string | null;
+  services: MechanicApplicationServiceItem[];
 }
 
 // ── Vehículos ───────────────────────────────────────────────────────────────
@@ -418,6 +443,8 @@ export interface AdminUser {
   lastLoginAt: string | null;
   roles: ApiRole[];
   vehicleCount: number;
+  /** Nombres de los servicios aprobados (solo mecánicos) */
+  approvedServices: string[];
 }
 
 export interface AdminVehicle {

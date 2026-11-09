@@ -4,16 +4,16 @@
 
 | Capa | Tecnología |
 |---|---|
-| Backend (API REST) | PHP 8.2 sin framework, arquitectura MVC propia, PDO |
+| Backend (API REST) | PHP 8.4 en producción (compatible con 8.2+), sin framework, arquitectura MVC propia, PDO |
 | Base de datos | MySQL 8 / MariaDB 10.4+ (esquema en 3FN, ver [docs/BASE_DE_DATOS.md](docs/BASE_DE_DATOS.md)) |
 | Frontend | React 18 + TypeScript + Vite + Tailwind CSS + Leaflet (OpenStreetMap) |
-| Servicios externos | Resend (correos), Groq (asistente de diagnóstico) — ambos opcionales |
+| Servicios externos | Resend (correos), Groq (asistente de diagnóstico), Cloudflare Turnstile (CAPTCHA) — todos opcionales |
 
 ## Funcionalidades por rol
 
 - **Cliente:** registro (con vehículo y licencia), catálogo de servicios con precio base, asistente de diagnóstico, solicitud con ubicación en el mapa o GPS, seguimiento en vivo, contacto con el mecánico (llamada / WhatsApp), pago (efectivo, tarjeta o PSE — pasarela de pruebas), comprobante imprimible, calificación del mecánico, encuesta de satisfacción, PQR, historial, gestión de vehículos con SOAT y tecnomecánica, y solicitud para convertirse en mecánico.
-- **Mecánico:** disponibilidad, solicitudes cercanas ordenadas por prioridad y distancia, aceptar / iniciar / completar, repuestos tomados del inventario (descuentan stock), fotos de evidencia, confirmación de pagos en efectivo, calificación del cliente, estadísticas y PQR. Quien es mecánico y cliente cambia de vista desde el menú.
-- **Administrador:** dashboard con indicadores, usuarios (suspender / reactivar), revisión de solicitudes de mecánico, servicios, vehículos, pagos, calificaciones y encuestas, desempeño por mecánico, inventario, ingreso de mercancía por proveedor y factura, y PQR de clientes y mecánicos.
+- **Mecánico:** servicios aprobados por tipo (solo ve y acepta solicitudes de esos servicios; puede pedir más desde su perfil), disponibilidad, solicitudes cercanas ordenadas por prioridad y distancia, aceptar / iniciar / completar, repuestos tomados del inventario (descuentan stock), fotos de evidencia, confirmación de pagos en efectivo, calificación del cliente, estadísticas y PQR. Quien es mecánico y cliente cambia de vista desde el menú.
+- **Administrador:** dashboard con indicadores, usuarios (suspender / reactivar), revisión de solicitudes de mecánico aprobando cada servicio por separado, servicios, vehículos, pagos, calificaciones y encuestas, desempeño por mecánico, inventario, ingreso de mercancía por proveedor y factura, y PQR de clientes y mecánicos.
 
 ## Estructura (MVC)
 
@@ -40,7 +40,7 @@ docker/, Dockerfile, render.yaml   Despliegue
 
 ## Puesta en marcha local
 
-Requisitos: PHP 8.2 con `pdo_mysql`, Composer, Node.js 20+, MySQL o MariaDB (XAMPP sirve).
+Requisitos: PHP 8.2 o superior con `pdo_mysql` (producción usa 8.4), Composer, Node.js 20+, MySQL o MariaDB (XAMPP sirve).
 
 ```bash
 composer install
@@ -71,7 +71,9 @@ Abre http://localhost:5173. Vite reenvía `/api` y `/uploads` al servidor PHP, a
 | Cliente | cliente@parce.test |
 | Mecánico (también cliente) | mecanico@parce.test |
 
-> Son solo para desarrollo y pruebas: no ejecutes `seed` en producción.
+El mecánico de demostración tiene aprobados todos los servicios menos la grúa, para mostrar la aprobación por tipo de servicio.
+
+> Son solo para desarrollo y pruebas: no ejecutes `seed` en producción. Su contraseña es anterior a la política actual y es pública: antes de producción real pon `SEED_DEMO=false` y borra o desactiva estas cuentas.
 
 ## Consola
 
@@ -81,7 +83,7 @@ php bin/parce status                  # estado de las migraciones
 php bin/parce rollback                # revierte el último lote
 php bin/parce fresh                   # borra todo, migra y siembra (bloqueado en producción)
 php bin/parce expire-requests 30      # expira solicitudes sin atender hace más de 30 min
-php bin/parce cleanup-sessions        # borra sesiones vencidas
+php bin/parce cleanup-sessions        # borra sesiones vencidas y registros viejos de intentos fallidos
 php bin/parce cleanup-logs 30         # borra logs de más de 30 días
 ```
 
@@ -102,7 +104,16 @@ DB_DATABASE=parce_test php bin/parce migrate
 vendor/bin/phpunit -c phpunit.integration.xml
 ```
 
-El CI de GitHub Actions (`.github/workflows/ci.yml`) corre la suite unitaria y el build del frontend en cada push.
+El CI de GitHub Actions (`.github/workflows/ci.yml`) corre en cada push: la suite unitaria con PHP 8.2 y 8.4 (falla ante cualquier aviso de código obsoleto), la suite de integración contra MySQL 8 (migraciones, datos demo, reversión y flujo de mecánicos) y el build del frontend.
+
+## Seguridad
+
+- **Contraseñas:** hash Argon2id. Al crear o cambiar una contraseña se exigen 8 a 128 caracteres, mayúscula, minúscula, número y carácter especial, y se rechazan las contraseñas comunes ("Password123!", "Colombia2024*"…) y las que contienen el nombre, el correo o la palabra "parce" (`app/Models/Auth/PasswordPolicy.php`). El inicio de sesión no aplica estas reglas, para que las cuentas antiguas sigan entrando.
+- **Intentos fallidos:** límite por IP (5 intentos cada 15 minutos) y bloqueo por cuenta: tras 3 fallos se pide el CAPTCHA y tras 5 la cuenta se bloquea 15 minutos, el doble en cada bloqueo nuevo (hasta 24 horas). El dueño recibe un correo de alerta y restablecer la contraseña desbloquea la cuenta (`LoginThrottleService`).
+- **CAPTCHA:** Cloudflare Turnstile en el registro, la recuperación de contraseña y el inicio de sesión tras varios fallos. Se activa con `TURNSTILE_SITE_KEY` y `TURNSTILE_SECRET_KEY` (`CaptchaService`).
+- **Sesiones:** cookie HttpOnly (el id nunca viaja en el JSON), vencen por inactividad y por tiempo total, y se regeneran cada 10 minutos.
+- **Roles:** cada petición pasa por autenticación y RBAC en el servidor; los mecánicos solo atienden los tipos de servicio que un administrador les aprobó.
+- `GET /api/health/system` indica si el chatbot, el correo y el CAPTCHA tienen clave configurada, sin mostrarla.
 
 ## Despliegue en Render
 
@@ -110,11 +121,11 @@ La aplicación se despliega como **un solo servicio web Docker**: Apache sirve e
 
 1. **Base de datos.** Render solo ofrece PostgreSQL gestionado, así que crea una base MySQL externa, por ejemplo [Aiven for MySQL](https://aiven.io/mysql) (plan gratuito), TiDB Cloud o Railway. Anota host, puerto, base, usuario y contraseña. Si el proveedor exige TLS con su propia CA (Aiven lo hace), pega el contenido de su `ca.pem` en la variable `DB_SSL_CA_PEM`.
 2. **Servicio.** En Render: *New → Blueprint*, elige este repositorio y Render leerá `render.yaml`.
-3. **Variables.** Completa en el panel las marcadas como secretas: `APP_URL` (la URL `https://...onrender.com` que asigne Render), `DB_*`, y opcionalmente `RESEND_API_KEY`, `MAIL_FROM` y `GROQ_API_KEY`. Para un entorno de pruebas puedes poner `SEED_DEMO=true` en el primer despliegue.
+3. **Variables.** Completa en el panel las marcadas como secretas: `APP_URL` (la URL `https://...onrender.com` que asigne Render), `DB_*`, y opcionalmente `RESEND_API_KEY`, `MAIL_FROM`, `GROQ_API_KEY`, `TURNSTILE_SITE_KEY` y `TURNSTILE_SECRET_KEY` (se crean gratis en el panel de Cloudflare → Turnstile, con el dominio del sitio). Para un entorno de pruebas puedes poner `SEED_DEMO=true` en el primer despliegue.
 4. Cada despliegue aplica las migraciones pendientes al arrancar (`RUN_MIGRATIONS=true`).
 
 Limitaciones del plan gratuito de Render: el servicio se suspende tras ~15 minutos sin tráfico (la primera petición tarda unos segundos en despertar) y su disco es efímero, así que las fotos subidas se pierden en cada despliegue. Para producción real: usa un plan pago con disco persistente montado en `/var/www/html/public/uploads` (o un almacenamiento de objetos) y programa las tareas de mantenimiento como Cron Jobs. Al ser una imagen Docker estándar, la misma configuración funciona en cualquier VPS o nube.
 
 ## Configuración
 
-Todas las variables están documentadas en [.env.example](.env.example). Las claves (`RESEND_API_KEY`, `GROQ_API_KEY`, credenciales de BD) nunca van en el repositorio.
+Todas las variables están documentadas en [.env.example](.env.example). Las claves (`RESEND_API_KEY`, `GROQ_API_KEY`, `TURNSTILE_SECRET_KEY`, credenciales de BD) nunca van en el repositorio.

@@ -36,6 +36,10 @@ services:
         sync: false
       - key: GROQ_MODEL           # opcional: otro modelo de Groq si el predeterminado se retira
         sync: false
+      - key: TURNSTILE_SITE_KEY   # CAPTCHA (Cloudflare Turnstile): clave pública del widget
+        sync: false
+      - key: TURNSTILE_SECRET_KEY # CAPTCHA: clave secreta, solo en el servidor
+        sync: false
       - key: RUN_MIGRATIONS
         value: "true"
       - key: SEED_DEMO            # "true" solo en un entorno de pruebas

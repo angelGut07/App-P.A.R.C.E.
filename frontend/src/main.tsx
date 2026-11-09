@@ -6,6 +6,10 @@ import { AuthProvider } from './controllers/AuthContext'
 import { ServiceProvider } from './controllers/ServiceContext'
 import { MechanicProvider } from './controllers/MechanicContext'
 
+// Punto de entrada del frontend. Los proveedores comparten el estado global:
+// la sesión (AuthProvider) envuelve a los demás porque el servicio en curso
+// del cliente (ServiceProvider) y la disponibilidad del mecánico
+// (MechanicProvider) dependen de quién inició sesión.
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <AuthProvider>

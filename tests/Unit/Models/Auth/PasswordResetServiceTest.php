@@ -4,6 +4,7 @@ namespace Tests\Unit\Models\Auth;
 
 use App\Core\DomainException;
 use App\Models\Auth\AuthService;
+use App\Models\Auth\LoginThrottleService;
 use App\Models\Auth\PasswordHasher;
 use App\Models\Auth\PasswordResetService;
 use App\Models\Auth\SessionManager;
@@ -35,6 +36,7 @@ class PasswordResetServiceTest extends TestCase
     private AuthService $authService;
     private SessionManager $sessionManager;
     private MailerService $mailer;
+    private LoginThrottleService $loginThrottle;
     private PasswordResetService $service;
 
     protected function setUp(): void
@@ -44,11 +46,13 @@ class PasswordResetServiceTest extends TestCase
         $this->authService = $this->createMock(AuthService::class);
         $this->sessionManager = $this->createMock(SessionManager::class);
         $this->mailer = $this->createMock(MailerService::class);
+        $this->loginThrottle = $this->createMock(LoginThrottleService::class);
         $this->service = new PasswordResetService(
             $this->passwordHasher,
             $this->authService,
             $this->sessionManager,
-            $this->mailer
+            $this->mailer,
+            $this->loginThrottle
         );
     }
 
@@ -145,6 +149,7 @@ class PasswordResetServiceTest extends TestCase
         $this->allowTransactions();
         $this->expectQueries([
             $this->stepFetchOne(['id' => 1, 'user_id' => 9]), // token válido, no usado, no expirado
+            $this->stepFetchOne(['email' => 'ana@parce.local', 'first_name' => 'Ana', 'last_name' => 'Gomez']), // dueño del enlace
             $this->stepWrite(1), // invalidar token(s) del usuario
         ]);
         $this->passwordHasher->method('hash')->willReturn('$argon2id$newhash');
@@ -155,8 +160,9 @@ class PasswordResetServiceTest extends TestCase
             ->method('destroyAllUserSessions')
             ->with(9)
             ->willReturn(2);
+        $this->loginThrottle->expects($this->once())->method('clear')->with('ana@parce.local');
 
-        $userId = $this->service->resetPassword('un-token-valido-cualquiera', 'NuevaContrasena123');
+        $userId = $this->service->resetPassword('un-token-valido-cualquiera', 'Tr3n-Azul#Lluvia');
 
         $this->assertSame(9, $userId);
     }
@@ -177,6 +183,26 @@ class PasswordResetServiceTest extends TestCase
         } catch (DomainException $e) {
             $this->assertSame(400, $e->getStatusCode());
             throw $e;
+        }
+    }
+
+    public function testResetPasswordRejectsAPasswordThatContainsTheOwnersName(): void
+    {
+        // El validador no conoce al dueño del enlace; el servicio completa la
+        // política con su correo y nombre antes de tocar la contraseña.
+        $this->expectQueries([
+            $this->stepFetchOne(['id' => 1, 'user_id' => 9]),
+            $this->stepFetchOne(['email' => 'carlos@parce.local', 'first_name' => 'Carlos', 'last_name' => 'Rodríguez']),
+        ]);
+        $this->authService->expects($this->never())->method('updatePassword');
+        $this->sessionManager->expects($this->never())->method('destroyAllUserSessions');
+
+        try {
+            $this->service->resetPassword('un-token-valido-cualquiera', 'Carlos#Seguro2026');
+            $this->fail('Debió rechazar la contraseña');
+        } catch (DomainException $e) {
+            $this->assertSame(400, $e->getStatusCode());
+            $this->assertStringContainsString('no debe contener tu nombre', $e->getMessage());
         }
     }
 }

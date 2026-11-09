@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react';
 import Logo from '../components/Logo';
+import Captcha from '../components/Captcha';
 import { useAuth, homePathFor } from '../../controllers/AuthContext';
+import { useCaptchaConfig } from '../../controllers/useCaptchaConfig';
 
 // ── Validadores inline ───────────────────────────────────────────────────────
 function validateEmail(value: string): string {
@@ -29,6 +31,17 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
 
+  // CAPTCHA: aparece tras varios intentos fallidos (lo decide el servidor)
+  const captcha = useCaptchaConfig();
+  const [captchaVisible, setCaptchaVisible] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState('');
+  const [captchaError, setCaptchaError] = useState('');
+  const [captchaReset, setCaptchaReset] = useState(0);
+
+  useEffect(() => {
+    if (captcha?.loginRequired) setCaptchaVisible(true);
+  }, [captcha]);
+
   const emailErr = validateEmail(email);
   const passwordErr = validatePassword(password);
   const isFormValid = !emailErr && !passwordErr;
@@ -39,12 +52,22 @@ export default function LoginPage() {
     setTouchedPassword(true);
     setLoginError('');
     if (!isFormValid) return;
+    if (captchaVisible && captcha?.enabled && !captchaToken) {
+      setCaptchaError('Confirma que no eres un robot para continuar');
+      return;
+    }
 
     setIsSubmitting(true);
-    const result = await login(email, password);
+    const result = await login(email, password, captchaVisible ? captchaToken : undefined);
     setIsSubmitting(false);
 
     if (!result.ok || !result.user) {
+      // Cada token sirve para un solo intento: se pide uno nuevo
+      if (captchaVisible) setCaptchaReset(n => n + 1);
+      if (result.captchaError) {
+        setCaptchaVisible(true);
+        setCaptchaError(result.captchaError);
+      }
       setLoginError(result.error || 'Credenciales incorrectas. Verifica tu correo y contraseña.');
       return;
     }
@@ -151,6 +174,16 @@ export default function LoginPage() {
                 ¿Olvidaste tu contraseña?
               </Link>
             </div>
+
+            {captchaVisible && captcha?.enabled && captcha.siteKey && (
+              <Captcha
+                siteKey={captcha.siteKey}
+                action="login"
+                onToken={token => { setCaptchaToken(token); if (token) setCaptchaError(''); }}
+                resetKey={captchaReset}
+                error={captchaError}
+              />
+            )}
 
             <button type="submit" disabled={isSubmitting} className="w-full btn-primary disabled:opacity-60">
               {isSubmitting ? 'Ingresando...' : 'Iniciar Sesión'}

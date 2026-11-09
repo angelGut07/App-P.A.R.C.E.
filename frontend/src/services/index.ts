@@ -80,12 +80,31 @@ export const mechanicService = {
 
 export const mechanicApplicationService = {
   mine: () => api.get<{ applications: MechanicApplication[] }>('/mechanic-applications/me'),
-  create: (data: { certification_title: string; specialty?: string; years_experience?: string; certification_document_url?: string; justification?: string }) =>
+  create: (data: { services: string[]; certification_title: string; specialty?: string; years_experience?: string; certification_document_url?: string; justification?: string }) =>
     api.post<{ application: MechanicApplication }>('/mechanic-applications', data),
   cancel: (id: number) => api.post<{ application: MechanicApplication }>(`/mechanic-applications/${id}/cancel`),
   attachDocument: (id: number, url: string) =>
     api.post<{ application: MechanicApplication }>(`/mechanic-applications/${id}/document`, { certification_document_url: url }),
+  attachServiceDocument: (id: number, serviceCode: string, url: string) =>
+    api.post<{ application: MechanicApplication }>(`/mechanic-applications/${id}/services/${serviceCode}/document`, { support_document_url: url }),
 };
+
+/**
+ * Sube el soporte de cada servicio que lo tenga y lo adjunta a la solicitud.
+ * Devuelve los códigos de los servicios cuyo soporte no se pudo subir.
+ */
+export async function attachServiceDocuments(applicationId: number, files: Record<string, File | null | undefined>): Promise<string[]> {
+  const failed: string[] = [];
+  for (const [code, file] of Object.entries(files)) {
+    if (!file) continue;
+    const upload = await uploadService.upload(file, 'document');
+    const attached = upload.success && upload.data
+      ? await mechanicApplicationService.attachServiceDocument(applicationId, code, upload.data.upload.url)
+      : null;
+    if (!attached?.success) failed.push(code);
+  }
+  return failed;
+}
 
 // ── Pagos ───────────────────────────────────────────────────────────────────
 
@@ -151,7 +170,12 @@ export const adminService = {
     api.get<{ ratings: AdminRating[] } & Paginated>(`/admin/ratings${query(filters)}`),
   mechanicPerformance: () => api.get<{ mechanics: MechanicPerformance[] }>('/admin/ratings/mechanics'),
   applications: (status?: string) => api.get<{ applications: MechanicApplication[] } & Paginated>(`/admin/mechanic-applications${query({ status })}`),
-  approveApplication: (id: number) => api.post<{ application: MechanicApplication }>(`/admin/mechanic-applications/${id}/approve`),
+  /** Sin approvedServices se aprueban todos los servicios pedidos; notes explica los que no */
+  approveApplication: (id: number, approvedServices?: string[], notes?: string) =>
+    api.post<{ application: MechanicApplication }>(`/admin/mechanic-applications/${id}/approve`, {
+      approved_services: approvedServices,
+      review_notes: notes || undefined,
+    }),
   rejectApplication: (id: number, reason: string) =>
     api.post<{ application: MechanicApplication }>(`/admin/mechanic-applications/${id}/reject`, { rejection_reason: reason }),
 };

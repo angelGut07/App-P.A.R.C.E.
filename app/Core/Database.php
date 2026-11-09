@@ -82,9 +82,13 @@ class Database
                     PDO::ATTR_TIMEOUT => 5,       // Tiempo límite de conexión
                 ];
 
-                // Bases de datos gestionadas (Aiven, TiDB...) exigen TLS: ruta del certificado CA
+                // Bases de datos gestionadas (Aiven, TiDB...) exigen TLS: ruta del certificado CA.
+                // PHP 8.4 trae la constante en Pdo\Mysql y PHP 8.5 depreca la de PDO.
                 if (!empty(self::$config['ssl_ca'])) {
-                    $options[PDO::MYSQL_ATTR_SSL_CA] = self::$config['ssl_ca'];
+                    $sslCaAttribute = class_exists(\Pdo\Mysql::class)
+                        ? \Pdo\Mysql::ATTR_SSL_CA
+                        : PDO::MYSQL_ATTR_SSL_CA;
+                    $options[$sslCaAttribute] = self::$config['ssl_ca'];
                 }
 
                 self::$connection = new PDO($dsn, $username, $password, $options);

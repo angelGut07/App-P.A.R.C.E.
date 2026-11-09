@@ -16,8 +16,9 @@ COPY composer.json composer.lock ./
 COPY app/ app/
 RUN composer install --no-dev --no-interaction --optimize-autoloader --no-scripts
 
-# 3) Imagen final
-FROM php:8.2-apache
+# 3) Imagen final. PHP 8.4 recibe parches de seguridad hasta el 31/12/2028;
+#    la etiqueta 8.4 trae siempre el último parche al reconstruir (cada deploy).
+FROM php:8.4-apache
 RUN docker-php-ext-install pdo_mysql \
     && a2enmod rewrite headers setenvif \
     && sed -i 's#/var/www/html#/var/www/html/public#g' /etc/apache2/sites-available/000-default.conf

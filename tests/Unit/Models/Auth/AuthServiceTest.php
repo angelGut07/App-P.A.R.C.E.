@@ -97,18 +97,33 @@ class AuthServiceTest extends TestCase
         $this->assertSame('Correo o contraseña incorrectos', $result->message);
     }
 
-    public function testAuthenticateFailsForSuspendedAccountBeforeCheckingPassword(): void
+    public function testAuthenticateReportsASuspendedAccountOnlyWithTheRightPassword(): void
     {
         $this->expectQueries([
             $this->stepFetchOne($this->activeUserRow(['account_status' => 'suspended'])),
         ]);
-        // No debe ni intentar verificar la contraseña de una cuenta inactiva.
-        $this->passwordHasher->expects($this->never())->method('verify');
+        $this->passwordHasher->method('verify')->willReturn(true);
+        // Una cuenta inactiva nunca abre sesión
+        $this->sessionManager->expects($this->never())->method('create');
 
         $result = $this->service->authenticate('cliente@parce.local', 'correct-password-1');
 
         $this->assertFalse($result->success);
         $this->assertSame('Tu cuenta no está activa', $result->message);
+        // El controlador no cuenta esto como un intento de adivinar la contraseña
+        $this->assertSame(['account' => 'inactive'], $result->errors);
+    }
+
+    public function testAuthenticateDoesNotRevealASuspendedAccountToWhoeverLacksThePassword(): void
+    {
+        $this->expectQueries([
+            $this->stepFetchOne($this->activeUserRow(['account_status' => 'suspended'])),
+        ]);
+        $this->passwordHasher->method('verify')->willReturn(false);
+
+        $result = $this->service->authenticate('cliente@parce.local', 'wrong-password-1');
+
+        $this->assertSame('Correo o contraseña incorrectos', $result->message);
     }
 
     public function testAuthenticateSucceedsAndCreatesASessionWithClientMetadata(): void

@@ -86,12 +86,6 @@ class AuthService
                 return AuthResult::failure('Correo o contraseña incorrectos');
             }
 
-            // Requisito 3.4: Verificar el estado de la cuenta
-            if ($user['account_status'] !== 'active') {
-                error_log("Authentication failed: Inactive account for email {$email} from IP {$ipAddress}");
-                return AuthResult::failure('Tu cuenta no está activa');
-            }
-
             // Requisito 3.5: Verificar la contraseña usando PasswordHasher
             $isValid = $this->passwordHasher->verify($password, $user['password_hash']);
 
@@ -99,6 +93,15 @@ class AuthService
             if (!$isValid) {
                 error_log("Authentication failed: Invalid password for email {$email} from IP {$ipAddress}");
                 return AuthResult::failure('Correo o contraseña incorrectos');
+            }
+
+            // Requisito 3.4: Verificar el estado de la cuenta. Va después de la
+            // contraseña para no revelarle a quien no la conoce que la cuenta
+            // existe; el código 'inactive' le dice al controlador que no fue un
+            // intento de adivinarla (no cuenta para el bloqueo).
+            if ($user['account_status'] !== 'active') {
+                error_log("Authentication failed: Inactive account for email {$email} from IP {$ipAddress}");
+                return AuthResult::failure('Tu cuenta no está activa', ['account' => 'inactive']);
             }
 
             // Requisito 16.1, 16.2: Verificar si la contraseña necesita ser rehasheada
@@ -132,7 +135,7 @@ class AuthService
         } catch (AuthenticationException $e) {
             // Requisito 18.5: Registrar fallos de autenticación
             error_log("Authentication failed for email {$email}: " . $e->getMessage());
-            return AuthResult::failure('Authentication error occurred');
+            return AuthResult::failure('Ocurrió un error al iniciar sesión');
         } catch (\Exception $e) {
             // Requisito 18.1: Manejar fallos de conexión a la base de datos de forma elegante
             error_log("Authentication error for email {$email}: " . $e->getMessage());

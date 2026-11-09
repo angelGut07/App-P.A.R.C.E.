@@ -29,8 +29,8 @@ class RequestValidatorRegistrationTest extends TestCase
     {
         $_POST = array_merge([
             'email'                 => 'nuevo@example.com',
-            'password'              => 'ContrasenaSegura123',
-            'password_confirmation' => 'ContrasenaSegura123',
+            'password'              => 'Tr3n-Azul#Lluvia',
+            'password_confirmation' => 'Tr3n-Azul#Lluvia',
             'first_name'            => 'Ana',
             'last_name'             => 'Gomez',
         ], $overrides);
@@ -67,6 +67,7 @@ class RequestValidatorRegistrationTest extends TestCase
             'role'                  => 'mechanic',
             'driver_license_number' => 'LIC-2024-0001',
             'certification_title'   => 'Técnico en Mecánica Automotriz',
+            'services'              => ['battery', 'tire'],
         ]));
 
         $this->assertTrue($result['valid']);

@@ -120,8 +120,9 @@ class ServiceRequestServiceTest extends TestCase
     public function testAcceptSucceedsTransitioningPendingToAssigned(): void
     {
         $this->expectQueries([
-            $this->stepFetchOne(['id' => 5, 'status' => 'pending']),
+            $this->stepFetchOne(['id' => 5, 'status' => 'pending', 'emergency_type' => 'battery']),
             $this->stepFetchOne(['driver_license_expiration_date' => date('Y-m-d', strtotime('+1 year'))]),
+            $this->stepFetchOne(['service_type_code' => 'battery']), // servicio aprobado para el mecánico
             $this->stepWrite(1), // UPDATE ... WHERE status = 'pending' afecta 1 fila
         ]);
 
@@ -136,8 +137,9 @@ class ServiceRequestServiceTest extends TestCase
         // mecánico ganó la carrera — exactamente el escenario que el guard
         // atómico de accept() existe para detectar.
         $this->expectQueries([
-            $this->stepFetchOne(['id' => 5, 'status' => 'pending']),
+            $this->stepFetchOne(['id' => 5, 'status' => 'pending', 'emergency_type' => 'battery']),
             $this->stepFetchOne(['driver_license_expiration_date' => date('Y-m-d', strtotime('+1 year'))]),
+            $this->stepFetchOne(['service_type_code' => 'battery']), // servicio aprobado para el mecánico
             $this->stepWrite(0), // 0 filas afectadas -> ya la tomó otro mecánico
         ]);
 
@@ -149,6 +151,24 @@ class ServiceRequestServiceTest extends TestCase
             $this->assertSame(409, $e->getStatusCode());
             $this->assertSame('Esta solicitud ya fue aceptada por otro mecánico', $e->getMessage());
             throw $e;
+        }
+    }
+
+    public function testAcceptRejectsAServiceTypeTheMechanicIsNotApprovedFor(): void
+    {
+        // Aprobación por tipo de servicio: sin la grúa aprobada no puede tomar una solicitud de grúa
+        $this->expectQueries([
+            $this->stepFetchOne(['id' => 5, 'status' => 'pending', 'emergency_type' => 'tow']),
+            $this->stepFetchOne(['driver_license_expiration_date' => date('Y-m-d', strtotime('+1 year'))]),
+            $this->stepFetchOne(false), // no tiene aprobada la grúa
+        ]);
+
+        try {
+            $this->service->accept(5, 42);
+            $this->fail('Debió rechazar la solicitud');
+        } catch (DomainException $e) {
+            $this->assertSame(403, $e->getStatusCode());
+            $this->assertStringContainsString('No estás habilitado', $e->getMessage());
         }
     }
 

@@ -377,8 +377,9 @@ class ServiceRequestControllerTest extends TestCase
     public function testAcceptSucceedsAndReturnsTheAssignedServiceRequest(): void
     {
         $this->expectQueries([
-            $this->stepFetchOne(['id' => 5, 'status' => 'pending']),
+            $this->stepFetchOne(['id' => 5, 'status' => 'pending', 'emergency_type' => 'battery']),
             $this->stepFetchOne(['driver_license_expiration_date' => date('Y-m-d', strtotime('+1 year'))]),
+            $this->stepFetchOne(['service_type_code' => 'battery']), // servicio aprobado para el mecánico
             $this->stepWrite(1),
             $this->stepFetchOne($this->requestRow(['status' => 'assigned'])), // getById()
         ]);
@@ -395,8 +396,9 @@ class ServiceRequestControllerTest extends TestCase
     public function testAcceptTranslatesAConcurrentAcceptanceIntoAConflictResponse(): void
     {
         $this->expectQueries([
-            $this->stepFetchOne(['id' => 5, 'status' => 'pending']),
+            $this->stepFetchOne(['id' => 5, 'status' => 'pending', 'emergency_type' => 'battery']),
             $this->stepFetchOne(['driver_license_expiration_date' => date('Y-m-d', strtotime('+1 year'))]),
+            $this->stepFetchOne(['service_type_code' => 'battery']), // servicio aprobado para el mecánico
             $this->stepWrite(0), // ya la tomó otro mecánico
         ]);
 

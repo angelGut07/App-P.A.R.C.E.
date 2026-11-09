@@ -33,7 +33,7 @@ class PasswordHasher
         // Requisito 1.4: Rechazar contraseñas más cortas que 8 caracteres
         if (strlen($password) < self::MIN_PASSWORD_LENGTH) {
             throw new AuthenticationException(
-                'Password must be at least ' . self::MIN_PASSWORD_LENGTH . ' characters long'
+                'La contraseña debe tener al menos ' . self::MIN_PASSWORD_LENGTH . ' caracteres'
             );
         }
 
@@ -42,14 +42,14 @@ class PasswordHasher
 
         if ($hash === false) {
             throw new AuthenticationException(
-                'Failed to hash password'
+                'No se pudo proteger la contraseña'
             );
         }
 
         // Requisito 1.2: Asegurar que el hash comience con el prefijo "$argon2id$"
         if (!str_starts_with($hash, '$argon2id$')) {
             throw new AuthenticationException(
-                'Hash algorithm verification failed'
+                'No se pudo verificar el algoritmo de la contraseña'
             );
         }
 
