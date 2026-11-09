@@ -100,6 +100,39 @@ class RBACMiddlewareTest extends TestCase
         $this->assertSame($sentinel, $response);
     }
 
+    public function testHandleServesACustomerRouteAsCustomerForAUserWhoIsAlsoAMechanic(): void
+    {
+        // Sin vista elegida, AuthMiddleware deja el rol de mayor privilegio
+        // (mecánico); en una ruta de cliente debe atenderse como cliente.
+        $this->expectQueries([
+            $this->stepFetchAll([['slug' => 'customer'], ['slug' => 'mechanic']]),
+        ]);
+
+        $middleware = new RBACMiddleware(['customer']);
+        $request = $this->makeRequest('GET', attributes: ['user' => ['id' => 42], 'userRole' => 'mechanic']);
+
+        $middleware->handle($request, function ($req) {
+            $this->assertSame('customer', $req->getAttribute('userRole'));
+            return Response::success();
+        });
+    }
+
+    public function testHandleKeepsTheActiveRoleWhenTheRouteAllowsIt(): void
+    {
+        // Ruta compartida (PQR): la vista elegida en el frontend se respeta
+        $this->expectQueries([
+            $this->stepFetchAll([['slug' => 'customer'], ['slug' => 'mechanic']]),
+        ]);
+
+        $middleware = new RBACMiddleware(['customer', 'mechanic']);
+        $request = $this->makeRequest('GET', attributes: ['user' => ['id' => 42], 'userRole' => 'mechanic']);
+
+        $middleware->handle($request, function ($req) {
+            $this->assertSame('mechanic', $req->getAttribute('userRole'));
+            return Response::success();
+        });
+    }
+
     public function testGetAllowedRolesReturnsTheRolesPassedToTheConstructor(): void
     {
         $middleware = new RBACMiddleware(['customer', 'mechanic']);

@@ -160,6 +160,53 @@ class AuthMiddlewareTest extends TestCase
         $this->assertSame('cliente@parce.local', $capturedRequest->getAttribute('user')['email']);
     }
 
+    /**
+     * Ejecuta handle() con un usuario activo que tiene $roles y la cabecera
+     * X-Active-Role indicada; devuelve el rol activo que vio el controlador.
+     */
+    private function activeRoleFor(array $roles, ?string $header): ?string
+    {
+        $now = time();
+        $this->expectQueries([
+            $this->stepFetchOne(['last_activity' => $now]),
+            $this->stepFetchOne($this->validSessionPayload($now)),
+            $this->stepWrite(1),
+            $this->stepFetchOne($this->activeUserRow()),
+            $this->stepFetchAll(array_map(fn($slug) => ['slug' => $slug], $roles)),
+        ]);
+
+        $request = $this->makeRequest(
+            'GET',
+            cookies: ['parce_session' => 'session-abc'],
+            headers: $header !== null ? ['X-Active-Role' => $header] : []
+        );
+
+        $activeRole = null;
+        $this->middleware->handle($request, function ($req) use (&$activeRole) {
+            $activeRole = $req->getAttribute('userRole');
+            return Response::success();
+        });
+
+        return $activeRole;
+    }
+
+    public function testHandleUsesTheViewChosenInTheFrontendWhenTheUserHasThatRole(): void
+    {
+        // Mecánico y cliente a la vez, en la vista de cliente
+        $this->assertSame('customer', $this->activeRoleFor(['mechanic', 'customer'], 'customer'));
+    }
+
+    public function testHandleIgnoresAViewForARoleTheUserDoesNotHave(): void
+    {
+        // La cabecera nunca sirve para obtener permisos de más
+        $this->assertSame('customer', $this->activeRoleFor(['customer'], 'administrator'));
+    }
+
+    public function testHandleFallsBackToThePrimaryRoleWithoutAView(): void
+    {
+        $this->assertSame('mechanic', $this->activeRoleFor(['mechanic', 'customer'], null));
+    }
+
     public function testHandleRegeneratesTheSessionIdAfterTheConfiguredIntervalAndSetsTheNewCookie(): void
     {
         // last_activity de hace 700s (> 600s, el intervalo por defecto de

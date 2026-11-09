@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
 import type { AppRole, UserProfile } from '@/models';
-import { authService, fieldErrors, setUnauthorizedHandler } from '@/services';
+import { authService, fieldErrors, setActiveRole, setUnauthorizedHandler } from '@/services';
 
 export type UserRole = AppRole;
 
@@ -64,20 +64,33 @@ function toAuthUser(profile: UserProfile): AuthUser {
   };
 }
 
+/** Rol de la API que corresponde a la vista: el administrador no necesita cabecera */
+function apiRoleOf(role: AppRole | undefined): 'customer' | 'mechanic' | null {
+  return role === 'mechanic' ? 'mechanic' : role === 'user' ? 'customer' : null;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUserState] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // La vista activa se registra en el cliente HTTP en el mismo paso que el
+  // usuario: las páginas que se montan con la vista nueva ya piden sus datos
+  // con ella (sus efectos corren antes que los de este proveedor).
+  const setUser = useCallback((next: AuthUser | null) => {
+    setActiveRole(apiRoleOf(next?.role));
+    setUserState(next);
+  }, []);
 
   const refresh = useCallback(async () => {
     const res = await authService.me();
     setUser(res.success && res.data ? toAuthUser(res.data) : null);
-  }, []);
+  }, [setUser]);
 
   useEffect(() => {
     setUnauthorizedHandler(() => setUser(null));
     refresh().finally(() => setIsLoading(false));
     return () => setUnauthorizedHandler(null);
-  }, [refresh]);
+  }, [refresh, setUser]);
 
   const login = async (email: string, password: string, captchaToken?: string) => {
     const res = await authService.login(email, password, captchaToken);

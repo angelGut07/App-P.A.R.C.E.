@@ -9,7 +9,7 @@ import type {
 } from '@/models';
 
 export { authService } from './authService';
-export { api, errorMessage, fieldErrors, setUnauthorizedHandler } from './apiClient';
+export { api, errorMessage, fieldErrors, setActiveRole, setUnauthorizedHandler } from './apiClient';
 
 // ── Catálogo ────────────────────────────────────────────────────────────────
 

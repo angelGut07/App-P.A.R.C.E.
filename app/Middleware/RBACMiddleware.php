@@ -63,6 +63,19 @@ class RBACMiddleware
             return ResponseFormatter::forbidden('Permisos insuficientes para acceder a este recurso');
         }
 
+        // El rol activo debe ser uno de los que admite la ruta: quien es
+        // mecánico y cliente y entra a una ruta de cliente actúa como cliente
+        // (no como mecánico, su rol de mayor privilegio). Si ya es uno de los
+        // admitidos (p. ej. la vista elegida en el frontend), se respeta.
+        if (!in_array($request->getAttribute('userRole'), $this->allowedRoles, true)) {
+            foreach ($this->allowedRoles as $role) {
+                if (in_array($role, $userRoles, true)) {
+                    $request->setAttribute('userRole', $role);
+                    break;
+                }
+            }
+        }
+
         // Permitir que la solicitud continúe si el usuario tiene el rol requerido
         return $next($request);
     }

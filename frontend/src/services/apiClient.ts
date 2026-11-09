@@ -6,16 +6,27 @@ import type { ApiResponse } from '@/models';
 const BASE_URL = '/api';
 
 let onUnauthorized: (() => void) | null = null;
+let activeRole: 'customer' | 'mechanic' | null = null;
 
 /** AuthContext registra aquí qué hacer cuando la sesión expira (401). */
 export function setUnauthorizedHandler(handler: (() => void) | null): void {
   onUnauthorized = handler;
 }
 
+/**
+ * AuthContext registra aquí la vista activa (cliente o mecánico). Viaja en la
+ * cabecera X-Active-Role para que el servidor atienda con ese rol a quien
+ * tiene los dos; el servidor solo la acepta si el usuario tiene ese rol.
+ */
+export function setActiveRole(role: 'customer' | 'mechanic' | null): void {
+  activeRole = role;
+}
+
 async function request<T>(method: string, endpoint: string, body?: unknown): Promise<ApiResponse<T>> {
   const isForm = body instanceof FormData;
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json';
+  if (activeRole) headers['X-Active-Role'] = activeRole;
 
   try {
     const response = await fetch(`${BASE_URL}${endpoint}`, {

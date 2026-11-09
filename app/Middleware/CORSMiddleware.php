@@ -32,7 +32,7 @@ class CORSMiddleware
     /**
      * Cabeceras permitidas
      */
-    private const ALLOWED_HEADERS = 'Content-Type, Accept, Authorization, X-Requested-With, X-Request-ID';
+    private const ALLOWED_HEADERS = 'Content-Type, Accept, Authorization, X-Requested-With, X-Request-ID, X-Active-Role';
 
     /**
      * Cabeceras expuestas (visibles para el frontend)

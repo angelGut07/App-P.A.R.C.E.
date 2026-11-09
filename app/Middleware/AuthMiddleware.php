@@ -21,6 +21,9 @@ use App\Core\Http\IPValidator;
  */
 class AuthMiddleware
 {
+    /** Cabecera con la vista que el usuario eligió en el frontend (cliente o mecánico) */
+    public const ACTIVE_ROLE_HEADER = 'X-Active-Role';
+
     private SessionManager $sessionManager;
     private RoleValidator $roleValidator;
 
@@ -107,13 +110,13 @@ class AuthMiddleware
             $request->setAttribute('user', $user);
             $request->setAttribute('userId', (int)$user['id']);
 
-            // Obtener los roles del usuario y determinar el rol principal
+            // Obtener los roles del usuario y el rol con el que actúa en esta petición
             $userRoles = $this->roleValidator->getUserRoles((int)$user['id']);
-            $primaryRole = $this->determinePrimaryRole($userRoles);
+            $activeRole = $this->determineActiveRole($userRoles, $request->header(self::ACTIVE_ROLE_HEADER));
 
             // Adjuntar roles a la solicitud para RBAC y autorización
-            $request->setAttribute('userRoles', $userRoles);  // Arreglo con todos los roles activos
-            $request->setAttribute('userRole', $primaryRole); // Rol principal para decisiones de rol único
+            $request->setAttribute('userRoles', $userRoles); // Arreglo con todos los roles activos
+            $request->setAttribute('userRole', $activeRole); // Rol activo para decisiones de rol único
 
             // Requisito 10.7: Continuar hacia el siguiente middleware/controlador
             $response = $next($request);
@@ -132,6 +135,29 @@ class AuthMiddleware
 
             return ResponseFormatter::serverError('El servicio de autenticación no está disponible');
         }
+    }
+
+    /**
+     * Rol con el que actúa el usuario en esta petición.
+     *
+     * Quien tiene varios roles (cliente y mecánico) elige su vista en el
+     * frontend, que la envía en la cabecera X-Active-Role. Solo se acepta un
+     * rol que el usuario realmente tiene, así que la cabecera nunca sirve para
+     * obtener permisos de más. Sin cabecera, o con un rol que no tiene, se usa
+     * el rol principal; RBACMiddleware lo ajusta además al rol que exige la
+     * ruta.
+     *
+     * @param array $roles     Slugs de los roles activos del usuario
+     * @param mixed $requested Valor de la cabecera X-Active-Role (o null)
+     * @return string          Slug del rol activo
+     */
+    private function determineActiveRole(array $roles, mixed $requested): string
+    {
+        if (is_string($requested) && in_array($requested, $roles, true)) {
+            return $requested;
+        }
+
+        return $this->determinePrimaryRole($roles);
     }
 
     /**
