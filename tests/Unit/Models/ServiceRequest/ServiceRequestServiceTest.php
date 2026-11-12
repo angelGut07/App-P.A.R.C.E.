@@ -101,7 +101,12 @@ class ServiceRequestServiceTest extends TestCase
             $this->stepFetchOne(['id' => 1]), // lock
             $this->stepFetchOne(false), // sin solicitud activa del cliente
             $this->stepFetchOne(false), // sin solicitud activa del vehículo
-            $this->stepWrite(1), // INSERT service_requests
+            function (\PDOStatement $stmt) use (&$insertParams): void { // INSERT service_requests
+                $stmt->method('execute')->willReturnCallback(function ($params) use (&$insertParams) {
+                    $insertParams = $params;
+                    return true;
+                });
+            },
             $this->stepWrite(1), // UPDATE service_code
         ]);
 
@@ -111,6 +116,9 @@ class ServiceRequestServiceTest extends TestCase
         ]);
 
         $this->assertSame(123, $requestId);
+        // service_code es NOT NULL UNIQUE: MySQL en modo estricto (producción)
+        // rechaza el INSERT si se omite, así que va un provisional único
+        $this->assertMatchesRegularExpression('/^PEND-[0-9a-f]{12}$/', $insertParams[0]);
     }
 
     // =========================================================================

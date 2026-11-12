@@ -104,7 +104,11 @@ class ServiceRequestService
                 );
             }
 
+            // service_code es NOT NULL UNIQUE y el definitivo depende del ID:
+            // se guarda uno provisional único y se reemplaza abajo, en la misma
+            // transacción (MySQL en modo estricto rechaza omitirlo).
             $insertData = [
+                'service_code'   => 'PEND-' . bin2hex(random_bytes(6)),
                 'customer_id'    => $customerId,
                 'vehicle_id'     => (int)$data['vehicle_id'],
                 'emergency_type' => strtolower($data['emergency_type']),

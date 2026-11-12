@@ -25,12 +25,14 @@ class PQRService
     {
         // El código de ticket depende del ID recién insertado, así que requiere
         // una segunda escritura — ambas deben ser atómicas: si la segunda falla,
-        // el ticket quedaría con ticket_code='PENDING' permanentemente.
+        // el ticket quedaría con el código provisional permanentemente. El
+        // provisional es único: ticket_code es UNIQUE y dos PQR creados a la
+        // vez no deben chocar.
         Database::beginTransaction();
         try {
             $ticketId = Database::insert('pqr', [
                 'user_id'     => $userId,
-                'ticket_code' => 'PENDING',
+                'ticket_code' => 'PEND-' . bin2hex(random_bytes(6)),
                 'type'        => $data['type'],
                 'subject'     => $data['subject'],
                 'description' => $data['description'],

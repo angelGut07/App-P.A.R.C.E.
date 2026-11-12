@@ -14,6 +14,9 @@ use PDOException;
  */
 class Database
 {
+    /** Modo SQL estricto de MySQL 8 (por defecto en producción), sin ONLY_FULL_GROUP_BY */
+    private const SQL_MODE = 'STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
+
     private static ?PDO $connection = null;
     private static array $config = [];
     private static int $maxRetries = 3;
@@ -95,6 +98,11 @@ class Database
 
                 // Misma zona horaria en MySQL (CURRENT_TIMESTAMP) y en PHP (date())
                 self::$connection->exec("SET time_zone = '" . (new \DateTime())->format('P') . "'");
+
+                // Mismo modo SQL en todos los entornos: el estricto de MySQL 8 (sin
+                // ONLY_FULL_GROUP_BY, que MariaDB aplica distinto). Sin esto, XAMPP
+                // acepta en local datos que la base de producción rechaza.
+                self::$connection->exec("SET SESSION sql_mode = '" . self::SQL_MODE . "'");
 
                 self::$lastError = null;
                 self::$healthCheckPassed = true;
