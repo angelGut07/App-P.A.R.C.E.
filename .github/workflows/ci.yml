@@ -80,14 +80,27 @@ jobs:
       - name: Run PHPUnit (integration)
         run: vendor/bin/phpunit -c phpunit.integration.xml
 
-      # Recrea la base parce_e2e y levanta su propio servidor (tests/E2E/bootstrap.php)
+      # Recrea la base parce_e2e y levanta su propio servidor (tests/E2E/bootstrap.php).
+      # shell: bash activa pipefail, así el paso falla si falla phpunit (no tee).
       - name: Run PHPUnit (E2E)
-        run: vendor/bin/phpunit -c phpunit.e2e.xml
+        shell: bash
+        run: vendor/bin/phpunit -c phpunit.e2e.xml 2>&1 | tee e2e-output.log
 
-      # Si algo falla, la traza del error queda en el log del servidor de pruebas
-      - name: Show the E2E server log
+      # Si algo falla: el log del servidor (con la traza del error) y un resumen
+      # como anotaciones, que se ven en la página del run sin abrir los logs
+      - name: Show the E2E failure details
         if: failure()
-        run: cat storage/logs/e2e-server.log || true
+        shell: bash
+        run: |
+          cat storage/logs/e2e-server.log || true
+          annotate() {
+            while IFS= read -r line; do
+              line="${line//%/%25}"
+              echo "::error title=$1::${line:0:600}"
+            done
+          }
+          grep -E "✘|se esperaba|Failed asserting|E2E:|Fatal|Exception" e2e-output.log | head -8 | annotate "Prueba E2E" || true
+          grep -F "[error]" storage/logs/e2e-server.log | head -4 | annotate "Servidor E2E" || true
 
   frontend:
     name: Frontend (TypeScript build)
