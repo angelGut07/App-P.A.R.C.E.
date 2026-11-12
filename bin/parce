@@ -23,7 +23,7 @@ use App\Core\MigrationRunner;
 use App\Models\Auth\LoginThrottleService;
 use App\Models\Auth\SessionManager;
 
-EnvLoader::load(BASE_PATH . '/.env');
+EnvLoader::load(EnvLoader::path(BASE_PATH));
 
 Database::setConfig([
     'driver'   => $_ENV['DB_CONNECTION'] ?? 'mysql',

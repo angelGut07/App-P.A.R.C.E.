@@ -40,7 +40,7 @@ docker/, Dockerfile, render.yaml   Despliegue
 
 ## Puesta en marcha local
 
-Requisitos: PHP 8.2 o superior con `pdo_mysql` (producción usa 8.4), Composer, Node.js 20+, MySQL o MariaDB (XAMPP sirve).
+Requisitos: PHP 8.4, la versión de producción (funciona desde 8.2), con las extensiones `pdo_mysql`, `curl`, `mbstring`, `openssl`, `fileinfo` y `sodium`; Composer, Node.js 20+ y MySQL o MariaDB (el de XAMPP sirve). En Windows, `winget install PHP.PHP.NTS.8.4` instala la misma versión que Render; luego copia `php.ini-development` como `php.ini` en su carpeta y activa esas extensiones.
 
 ```bash
 composer install
@@ -104,7 +104,18 @@ DB_DATABASE=parce_test php bin/parce migrate
 vendor/bin/phpunit -c phpunit.integration.xml
 ```
 
-El CI de GitHub Actions (`.github/workflows/ci.yml`) corre en cada push: la suite unitaria con PHP 8.2 y 8.4 (falla ante cualquier aviso de código obsoleto), la suite de integración contra MySQL 8 (migraciones, datos demo, reversión y flujo de mecánicos) y el build del frontend.
+Suite de punta a punta (E2E): usa la API por HTTP igual que el frontend. Cubre el flujo de un servicio (solicitud, aceptación, repuesto, evidencia, pago y calificaciones), el registro, la aprobación de mecánicos por servicio, el inventario, las PQR y las reglas de acceso. Recrea sola una base aparte llamada `parce_e2e` y levanta su propio servidor, así que solo necesita MySQL encendido:
+
+```bash
+vendor/bin/phpunit -c phpunit.e2e.xml
+```
+
+Si un paso falla, el mensaje dice qué se intentaba y qué respondió la API, y el detalle del servidor, con la traza del error, queda en `storage/logs/e2e-server.log`.
+
+El CI de GitHub Actions (`.github/workflows/ci.yml`) corre en cada push:
+- la suite unitaria con PHP 8.2 y 8.4, que falla ante cualquier aviso de código obsoleto;
+- contra MySQL 8, las migraciones, los datos demo y la reversión, la suite de integración y la E2E;
+- el build del frontend.
 
 ## Seguridad
 
@@ -114,6 +125,16 @@ El CI de GitHub Actions (`.github/workflows/ci.yml`) corre en cada push: la suit
 - **Sesiones:** cookie HttpOnly (el id nunca viaja en el JSON), vencen por inactividad y por tiempo total, y se regeneran cada 10 minutos.
 - **Roles:** cada petición pasa por autenticación y RBAC en el servidor; los mecánicos solo atienden los tipos de servicio que un administrador les aprobó.
 - `GET /api/health/system` indica si el chatbot, el correo y el CAPTCHA tienen clave configurada, sin mostrarla.
+
+## Logs y monitoreo
+
+- **En local** los logs quedan en `storage/logs/`, un archivo por tipo y por día: `error-AAAA-MM-DD.log` (errores con su traza), `database-…` (conexiones y consultas fallidas) y `requests-…` (una línea JSON por petición).
+- **En producción** van a la salida de errores (stderr) y se leen en la pestaña *Logs* del servicio en Render: los archivos del contenedor se borran en cada despliegue. Lo controla `LOG_CHANNEL` (`stderr` o `file`); sin definirla, se usa `stderr` cuando `APP_ENV=production`.
+- **Cómo encontrar un error:** cada respuesta trae el header `X-Request-Id`, y ese mismo id aparece en la línea del error en los logs.
+- **Salud del servicio:**
+  - `GET /api/health` confirma que la app responde y es el que usa Render para sus chequeos.
+  - `GET /api/health/database` responde 503 si la base de datos no contesta. Es la URL para un monitor externo, por ejemplo UptimeRobot cada 5 minutos.
+  - `GET /api/health/system` da el detalle por componente y también responde 503 sin base de datos.
 
 ## Despliegue en Render
 
@@ -128,4 +149,4 @@ Limitaciones del plan gratuito de Render: el servicio se suspende tras ~15 minut
 
 ## Configuración
 
-Todas las variables están documentadas en [.env.example](.env.example). Las claves (`RESEND_API_KEY`, `GROQ_API_KEY`, `TURNSTILE_SECRET_KEY`, credenciales de BD) nunca van en el repositorio.
+Todas las variables están documentadas en [.env.example](.env.example). Las claves (`RESEND_API_KEY`, `GROQ_API_KEY`, `TURNSTILE_SECRET_KEY`, credenciales de BD) nunca van en el repositorio. Para cargar otro archivo en vez de `.env`, define la variable `ENV_FILE` con su ruta (así lo hace la suite E2E).

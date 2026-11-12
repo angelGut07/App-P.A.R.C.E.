@@ -9,7 +9,7 @@ use Tests\Unit\Support\SimulatesHttp;
 
 /**
  * Tests unitarios de RequestLoggerMiddleware — sin base de datos, pero SÍ
- * escribe a un archivo real (storage/logs/requests.log, sin seam inyectable
+ * escribe a un archivo real (storage/logs/requests-AAAA-MM-DD.log, sin seam inyectable
  * — mismo tipo de limitación ya documentada para RateLimiter en
  * AuthControllerTest). No se puede mockear sin tocar producción; se verifica
  * leyendo la última línea real escrita tras handle().

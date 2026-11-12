@@ -14,7 +14,9 @@ services:
         value: production
       - key: APP_DEBUG
         value: "false"
-      - key: APP_URL              # https://parce.onrender.com (la URL que asigne Render)
+      - key: LOG_CHANNEL          # logs a stderr: se ven en la pestaña Logs de Render
+        value: stderr
+      - key: APP_URL             # https://parce.onrender.com (la URL que asigne Render)
         sync: false
       - key: DB_HOST
         sync: false

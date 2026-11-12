@@ -6,6 +6,7 @@ use App\Core\Controller;
 use App\Core\Request;
 use App\Core\Response;
 use App\Core\Database;
+use App\Core\Logger;
 use App\Core\Http\ResponseFormatter;
 use App\Core\Http\ErrorHandler;
 use App\Models\Auth\CaptchaService;
@@ -85,7 +86,9 @@ class HealthController extends Controller
     /**
      * Verificación integral de salud del sistema
      *
-     * Comprueba todos los componentes del sistema.
+     * Comprueba todos los componentes del sistema. Responde 503 si la base de
+     * datos no está disponible; "degraded" (200) si solo falla algo secundario,
+     * como el permiso de escritura de storage/logs.
      */
     public function system(Request $request): Response
     {
@@ -107,9 +110,12 @@ class HealthController extends Controller
                 'responseTimeMs' => $dbHealth['details']['response_time_ms'] ?? null,
             ];
 
+            // Sin base de datos la app no puede atender a nadie (ni iniciar
+            // sesión): es "unhealthy" con 503, para que un monitor externo lo
+            // detecte. Antes quedaba como "degraded" con 200 y pasaba por sano.
             if ($dbHealth['status'] !== 'healthy') {
                 error_log('Health check: database unhealthy — ' . $dbHealth['message']);
-                $overallStatus = 'degraded';
+                $overallStatus = 'unhealthy';
             }
         } catch (\Throwable $e) {
             ErrorHandler::logException($e);
@@ -128,9 +134,13 @@ class HealthController extends Controller
                 : 'El almacenamiento no tiene permisos de escritura',
         ];
 
-        if ($checks['storage']['status'] !== 'healthy') {
+        if ($checks['storage']['status'] !== 'healthy' && $overallStatus === 'healthy') {
             $overallStatus = 'degraded';
         }
+
+        // Destino de los logs: "stderr" en producción (pestaña Logs de Render),
+        // "file" en local (storage/logs). Sirve para confirmar la configuración.
+        $checks['logs'] = ['channel' => Logger::channel()];
 
         // Integraciones externas: solo si tienen clave, nunca su valor. Sin
         // ellas la app funciona, pero el asistente y los correos no.

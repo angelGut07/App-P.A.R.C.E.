@@ -2,6 +2,7 @@
 
 namespace App\Middleware;
 
+use App\Core\Logger;
 use App\Core\Request;
 use App\Core\Response;
 
@@ -17,11 +18,6 @@ use App\Core\Response;
  */
 class RequestLoggerMiddleware
 {
-    /**
-     * Ruta del archivo de registro
-     */
-    private const LOG_FILE = __DIR__ . '/../../storage/logs/requests.log';
-
     /**
      * Procesa la solicitud entrante
      *
@@ -121,19 +117,13 @@ class RequestLoggerMiddleware
     private function writeLog(array $logEntry): void
     {
         try {
-            // Asegurar que el directorio de registros exista
-            $logDir = dirname(self::LOG_FILE);
-            if (!is_dir($logDir)) {
-                mkdir($logDir, 0755, true);
-            }
-
-            // Convertir a JSON y agregar nueva línea (formato JSON Lines)
-            $jsonLine = json_encode($logEntry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . PHP_EOL;
-
-            // Agregar al archivo de registro (bajo costo, sin bloqueo para mejor rendimiento)
-            file_put_contents(self::LOG_FILE, $jsonLine, FILE_APPEND);
-
-        } catch (\Exception $e) {
+            // Una línea JSON por petición (formato JSON Lines), en el destino
+            // que corresponda: archivo en local, stderr en producción (Logger)
+            Logger::write('requests', (string) json_encode(
+                $logEntry,
+                JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE
+            ));
+        } catch (\Throwable $e) {
             // Fallar silenciosamente para no interrumpir el flujo de la solicitud
             // Registrar en error_log como alternativa
             error_log("RequestLogger error: " . $e->getMessage());
@@ -141,12 +131,12 @@ class RequestLoggerMiddleware
     }
 
     /**
-     * Obtiene la ruta del archivo de registro (para pruebas)
+     * Ruta del archivo de registro del día cuando el destino es "file" (para pruebas)
      *
      * @return string Ruta del archivo de registro
      */
     public static function getLogFilePath(): string
     {
-        return self::LOG_FILE;
+        return Logger::filePath('requests');
     }
 }

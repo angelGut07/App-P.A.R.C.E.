@@ -106,7 +106,6 @@ class Database
 
                 self::$lastError = null;
                 self::$healthCheckPassed = true;
-                self::logConnection('success', $host, $database);
                 return;
 
             } catch (PDOException $e) {
@@ -114,7 +113,7 @@ class Database
                 $lastException = $e;
                 self::$lastError = $e->getMessage();
 
-                self::logConnection('failed', $host, $database, $e->getMessage(), $attempt);
+                self::logConnectionFailure($host, $database, $e->getMessage(), $attempt);
 
                 if ($attempt < self::$maxRetries) {
                     // Retroceso exponencial: 1s, 2s, 4s
@@ -330,66 +329,41 @@ class Database
     }
 
     /**
-     * Registra en log el intento de conexión a la base de datos
+     * Registra un intento de conexión fallido. Las conexiones exitosas no se
+     * registran: ocurren en cada petición y solo llenarían el log.
      */
-    private static function logConnection(string $status, string $host, string $database, ?string $error = null, int $attempt = 1): void
+    private static function logConnectionFailure(string $host, string $database, string $error, int $attempt): void
     {
-        $logDir = __DIR__ . '/../../storage/logs';
-
-        if (!is_dir($logDir)) {
-            @mkdir($logDir, 0755, true);
-        }
-
-        $logFile = $logDir . '/database-' . date('Y-m-d') . '.log';
-
-        $message = sprintf(
-            "[%s] Connection %s: host=%s, database=%s, attempt=%d",
+        Logger::write('database', sprintf(
+            '[%s] Connection failed: host=%s, database=%s, attempt=%d, error=%s',
             date('Y-m-d H:i:s'),
-            $status,
             $host,
             $database,
-            $attempt
-        );
-
-        if ($error) {
-            $message .= ", error=" . $error;
-        }
-
-        $message .= "\n";
-
-        @file_put_contents($logFile, $message, FILE_APPEND);
+            $attempt,
+            $error
+        ));
     }
 
     /**
-     * Registra en log la ejecución de una consulta SQL
+     * Registra una consulta SQL que falló
      */
     private static function logQuery(string $status, string $sql, array $params, ?string $error = null): void
     {
-        $logDir = __DIR__ . '/../../storage/logs';
+        $message = sprintf('[%s] Query %s: %s', date('Y-m-d H:i:s'), $status, $sql);
 
-        if (!is_dir($logDir)) {
-            @mkdir($logDir, 0755, true);
-        }
-
-        $logFile = $logDir . '/database-' . date('Y-m-d') . '.log';
-
-        $message = sprintf(
-            "[%s] Query %s: %s",
-            date('Y-m-d H:i:s'),
-            $status,
-            $sql
-        );
-
+        // Los valores pueden ser datos personales (correos, teléfonos, hashes):
+        // en producción solo se registra cuántos eran; en local van completos
+        // para poder depurar.
         if (!empty($params)) {
-            $message .= ", params=" . json_encode($params);
+            $message .= Logger::channel() === Logger::CHANNEL_STDERR
+                ? ', params=' . count($params) . ' valor(es)'
+                : ', params=' . json_encode($params, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
         }
 
         if ($error) {
-            $message .= ", error=" . $error;
+            $message .= ', error=' . $error;
         }
 
-        $message .= "\n";
-
-        @file_put_contents($logFile, $message, FILE_APPEND);
+        Logger::write('database', $message);
     }
 }

@@ -54,4 +54,22 @@ class EnvLoaderTest extends TestCase
     {
         $this->assertFalse(EnvLoader::load($this->file . '.no-existe'));
     }
+
+    public function testPathIsTheProjectEnvFileUnlessEnvFileIsSet(): void
+    {
+        $previous = getenv('ENV_FILE');
+
+        try {
+            putenv('ENV_FILE');
+            $this->assertSame('/proyecto/.env', EnvLoader::path('/proyecto/'));
+
+            putenv('ENV_FILE=   ');
+            $this->assertSame('/proyecto/.env', EnvLoader::path('/proyecto'), 'Un valor en blanco equivale a no definirlo');
+
+            putenv('ENV_FILE=/tmp/e2e.env');
+            $this->assertSame('/tmp/e2e.env', EnvLoader::path('/proyecto'));
+        } finally {
+            putenv($previous === false ? 'ENV_FILE' : "ENV_FILE={$previous}");
+        }
+    }
 }

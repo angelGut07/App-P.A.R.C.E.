@@ -2,6 +2,8 @@
 
 namespace App\Core;
 
+use App\Core\Http\ErrorHandler;
+
 /**
  * Clase principal de la aplicación
  *
@@ -29,11 +31,11 @@ class App
     }
 
     /**
-     * Carga las variables de entorno desde el archivo .env
+     * Carga las variables de entorno desde el archivo .env (u otro, con ENV_FILE)
      */
     private function loadEnvironment(): void
     {
-        $envFile = __DIR__ . '/../../.env';
+        $envFile = EnvLoader::path(dirname(__DIR__, 2));
 
         if (!EnvLoader::load($envFile) && !EnvLoader::hasProcessConfig()) {
             // Verificar si estamos en producción — el .env es obligatorio
@@ -221,65 +223,12 @@ class App
     }
 
     /**
-     * Registra el error en el archivo de log diario
+     * Registra el error con el mismo formato que ErrorHandler (traza sin
+     * argumentos, id de la petición) y en el mismo destino (ver Logger).
      */
     private function logError(\Throwable $e): void
     {
-        $logDir = __DIR__ . '/../../storage/logs';
-
-        if (!is_dir($logDir)) {
-            mkdir($logDir, 0755, true);
-        }
-
-        $logFile = $logDir . '/error-' . date('Y-m-d') . '.log';
-        $requestId = RequestContext::getRequestId();
-        $message = sprintf(
-            "[%s]%s %s: %s in %s:%d\nStack trace:\n%s\n\n",
-            date('Y-m-d H:i:s'),
-            $requestId !== null ? " [{$requestId}]" : '',
-            get_class($e),
-            $e->getMessage(),
-            $e->getFile(),
-            $e->getLine(),
-            $this->formatTraceWithoutArguments($e)
-        );
-
-        file_put_contents($logFile, $message, FILE_APPEND);
-    }
-
-    /**
-     * Formatea la traza de la excepción sin los valores de los argumentos.
-     *
-     * `Throwable::getTraceAsString()` incluye los valores de los argumentos de
-     * cada llamada en la pila — si el error ocurre mientras una contraseña,
-     * token de sesión u otro dato sensible está en el alcance de alguna llamada
-     * de la pila, ese valor en texto plano quedaría escrito permanentemente en
-     * el archivo de log, sin importar el modo debug (este log se escribe
-     * siempre). Se construye la traza manualmente usando solo
-     * clase/función/archivo/línea, sin argumentos.
-     *
-     * @param \Throwable $e Excepción o error
-     * @return string Traza de la pila sin argumentos
-     */
-    private function formatTraceWithoutArguments(\Throwable $e): string
-    {
-        $lines = [];
-
-        foreach ($e->getTrace() as $index => $frame) {
-            $function = $frame['function'] ?? '';
-            $class    = $frame['class'] ?? '';
-            $type     = $frame['type'] ?? '';
-            $file     = $frame['file'] ?? '[internal function]';
-            $line     = $frame['line'] ?? '';
-
-            $location = $file !== '[internal function]' ? "{$file}({$line})" : $file;
-
-            $lines[] = "#{$index} {$location}: {$class}{$type}{$function}()";
-        }
-
-        $lines[] = '#' . count($lines) . ' {main}';
-
-        return implode("\n", $lines);
+        ErrorHandler::logException($e);
     }
 
     /**

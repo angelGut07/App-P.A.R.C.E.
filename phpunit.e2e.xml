@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Suite de punta a punta (E2E): peticiones HTTP reales a un servidor de
+    pruebas, con sesiones, middleware, controladores y MySQL, en el mismo
+    orden en que la app hace las cosas (solicitud, pago y calificaciones;
+    registro, aprobación de mecánicos, inventario y PQR).
+
+    tests/E2E/bootstrap.php recrea la base "parce_e2e" y levanta su propio
+    servidor en un puerto libre: no toca la base de desarrollo. Requiere
+    MySQL/MariaDB encendido. La corre el CI contra MySQL 8 (job "integration").
+
+    Ejecutar con:
+        vendor/bin/phpunit -c phpunit.e2e.xml
+
+    testdox="true": la salida muestra cada paso con su descripción en español.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/E2E/bootstrap.php"
+         colors="true"
+         testdox="true"
+         cacheDirectory=".phpunit.cache/e2e">
+    <testsuites>
+        <testsuite name="E2E">
+            <directory>tests/E2E</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>

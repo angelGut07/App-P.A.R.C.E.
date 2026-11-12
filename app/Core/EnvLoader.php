@@ -72,6 +72,26 @@ class EnvLoader
     }
 
     /**
+     * Archivo de entorno a cargar: el que indique la variable ENV_FILE o, si
+     * no está definida, el .env de la raíz del proyecto.
+     *
+     * Lo usa la suite E2E: su servidor de pruebas lee un archivo propio para no
+     * heredar claves reales del .env local (correo, CAPTCHA). En Windows no se
+     * puede pasar una variable vacía a un proceso hijo, así que "apagar" una
+     * clave solo es posible desde un archivo.
+     *
+     * @param string $basePath Raíz del proyecto
+     */
+    public static function path(string $basePath): string
+    {
+        $custom = getenv('ENV_FILE');
+
+        return ($custom !== false && trim($custom) !== '')
+            ? $custom
+            : rtrim($basePath, '/\\') . '/.env';
+    }
+
+    /**
      * Indica si la configuración mínima ya viene del entorno del proceso
      * (despliegue sin archivo .env).
      */

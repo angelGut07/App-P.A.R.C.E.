@@ -31,8 +31,9 @@ jobs:
         run: composer test
 
   integration:
-    # Migraciones, datos demo, reversión y flujo de solicitudes de mecánico
-    # contra MySQL 8, la misma familia que la base de producción
+    # Contra MySQL 8, la misma familia que la base de producción: migraciones,
+    # datos demo y reversión; flujo de solicitudes de mecánico; y la suite de
+    # punta a punta, que usa la API por HTTP como el frontend
     name: Integracion (MySQL 8)
     runs-on: ubuntu-latest
     services:
@@ -60,7 +61,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: pdo_mysql
+          extensions: pdo_mysql, curl, fileinfo
 
       - name: Install Composer dependencies
         run: composer install --prefer-dist --no-progress
@@ -78,6 +79,15 @@ jobs:
 
       - name: Run PHPUnit (integration)
         run: vendor/bin/phpunit -c phpunit.integration.xml
+
+      # Recrea la base parce_e2e y levanta su propio servidor (tests/E2E/bootstrap.php)
+      - name: Run PHPUnit (E2E)
+        run: vendor/bin/phpunit -c phpunit.e2e.xml
+
+      # Si algo falla, la traza del error queda en el log del servidor de pruebas
+      - name: Show the E2E server log
+        if: failure()
+        run: cat storage/logs/e2e-server.log || true
 
   frontend:
     name: Frontend (TypeScript build)

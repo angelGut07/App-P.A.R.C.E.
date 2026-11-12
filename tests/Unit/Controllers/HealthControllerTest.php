@@ -4,6 +4,7 @@ namespace Tests\Unit\Controllers;
 
 use App\Controllers\HealthController;
 use App\Core\Database;
+use App\Core\Logger;
 use PHPUnit\Framework\TestCase;
 use Tests\Unit\Support\SimulatesHttp;
 use PDO;
@@ -131,9 +132,11 @@ class HealthControllerTest extends TestCase
         $this->assertSame('healthy', $body['data']['status']);
         $this->assertSame('healthy', $body['data']['checks']['database']['status']);
         $this->assertSame('healthy', $body['data']['checks']['storage']['status']);
+        // Informa el destino activo de los logs (la regla se prueba en LoggerTest)
+        $this->assertSame(Logger::channel(), $body['data']['checks']['logs']['channel']);
     }
 
-    public function testSystemReturns200WithDegradedOverallStatusWhenTheDatabaseIsUnhealthy(): void
+    public function testSystemReturns503WithUnhealthyOverallStatusWhenTheDatabaseIsUnhealthy(): void
     {
         $this->mockUnhealthyDatabase();
 
@@ -143,11 +146,11 @@ class HealthControllerTest extends TestCase
         $body = $this->responseBody($response);
 
         // healthCheck() atrapa la excepción internamente y devuelve
-        // status=unhealthy (nunca la deja escapar) -> system() la traduce a
-        // 'degraded' (no 'unhealthy'), su propio catch(Throwable) queda como
-        // defensa en profundidad no alcanzable en este flujo.
-        $this->assertSame(200, $response->getStatusCode());
-        $this->assertSame('degraded', $body['data']['status']);
+        // status=unhealthy. Sin base de datos la app no atiende a nadie, así
+        // que system() responde 503: un monitor externo debe verlo como caída
+        // (antes devolvía 200 con 'degraded' y pasaba por sano).
+        $this->assertSame(503, $response->getStatusCode());
+        $this->assertSame('unhealthy', $body['data']['status']);
         $this->assertSame('unhealthy', $body['data']['checks']['database']['status']);
     }
 }

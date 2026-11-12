@@ -4,6 +4,7 @@ namespace App\Core\Http;
 
 use App\Core\Response;
 use App\Core\DomainException;
+use App\Core\Logger;
 use App\Core\RequestContext;
 use App\Models\Auth\AuthenticationException;
 
@@ -114,18 +115,12 @@ class ErrorHandler
      */
     public static function logException(\Throwable $e): void
     {
-        $logDir = __DIR__ . '/../../../storage/logs';
-
-        if (!is_dir($logDir)) {
-            @mkdir($logDir, 0755, true);
-        }
-
-        $logFile = $logDir . '/error-' . date('Y-m-d') . '.log';
-
-        // Formatear los detalles de la excepción
+        // El id de la petición es el mismo del header X-Request-Id: con él se
+        // encuentra en los logs la traza del error que vio un usuario.
         $requestId = RequestContext::getRequestId();
-        $message = sprintf(
-            "[%s]%s %s: %s in %s:%d\nStack trace:\n%s\n\n",
+
+        Logger::write('error', sprintf(
+            "[%s]%s %s: %s in %s:%d\nStack trace:\n%s\n",
             date('Y-m-d H:i:s'),
             $requestId !== null ? " [{$requestId}]" : '',
             get_class($e),
@@ -133,10 +128,7 @@ class ErrorHandler
             $e->getFile(),
             $e->getLine(),
             self::formatTraceWithoutArguments($e)
-        );
-
-        // Escribir en el archivo de log
-        @file_put_contents($logFile, $message, FILE_APPEND);
+        ));
     }
 
     /**
