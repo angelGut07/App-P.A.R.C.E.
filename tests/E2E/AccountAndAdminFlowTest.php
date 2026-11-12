@@ -40,6 +40,7 @@ final class AccountAndAdminFlowTest extends E2ETestCase
             'vehicle_color'         => 'Azul',
             'soat_number'           => 'SOATE2E001',
             'tecnomecanica_number'  => 'TME2E001',
+            'accept_terms'          => true,
         ]), 'Registrarse con un vehículo');
         $this->assertSame(self::EMAIL, $data['user']['email'] ?? null);
 

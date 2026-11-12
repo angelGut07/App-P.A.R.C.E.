@@ -159,13 +159,9 @@ export default function LandingPage() {
               Contacto
             </Link>
             <span>•</span>
-            <a href="#" className="hover:text-primary-400 transition-colors">
-              Términos
-            </a>
+            <Link to="/terminos" className="hover:text-primary-400 transition-colors">Términos</Link>
             <span>•</span>
-            <a href="#" className="hover:text-primary-400 transition-colors">
-              Privacidad
-            </a>
+            <Link to="/privacidad" className="hover:text-primary-400 transition-colors">Privacidad</Link>
           </div>
         </div>
       </footer>

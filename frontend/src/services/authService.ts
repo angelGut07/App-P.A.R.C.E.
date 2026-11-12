@@ -22,6 +22,8 @@ export interface RegisterInput {
   tecnomecanica_number?: string;
   /** Token de Turnstile, si el CAPTCHA está activo */
   captcha_token?: string;
+  /** Aceptó los Términos y la Política de tratamiento de datos (obligatorio, Ley 1581) */
+  accept_terms: boolean;
   // Solo para role = mechanic
   /** Códigos de los servicios que puede prestar (al menos uno) */
   services?: string[];
@@ -53,6 +55,9 @@ export const authService = {
   logout: () => api.post<null>('/auth/logout'),
 
   me: () => api.get<UserProfile>('/auth/me'),
+
+  /** Acepta la versión vigente de los Términos y la Política de tratamiento de datos */
+  acceptConsent: () => api.post<UserProfile>('/auth/consent'),
 
   updateProfile: (data: ProfileInput) => api.put<UserProfile>('/auth/profile', data),
 

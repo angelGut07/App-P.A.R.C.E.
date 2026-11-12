@@ -74,6 +74,18 @@ export interface CaptchaConfig {
   loginRequired: boolean;
 }
 
+/**
+ * Autorización de tratamiento de datos (Ley 1581 de 2012). Si no aceptó la
+ * versión vigente (upToDate false), la app le pide aceptarla antes de seguir.
+ */
+export interface ConsentStatus {
+  currentVersion: string;
+  /** Última versión aceptada; ausente si nunca aceptó */
+  version?: string;
+  acceptedAt?: string;
+  upToDate: boolean;
+}
+
 export interface UserProfile {
   id: number;
   email: string;
@@ -87,6 +99,7 @@ export interface UserProfile {
   lastLoginAt: string | null;
   roles: ApiRole[];
   driverLicense: DriverLicense | null;
+  consent: ConsentStatus;
   mechanicProfile: MechanicProfile | null;
   /** Promedio de las calificaciones recibidas en cada rol (sin el detalle de cada una). */
   ratingSummary?: {

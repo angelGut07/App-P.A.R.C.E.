@@ -14,6 +14,7 @@ use App\Models\Auth\PasswordResetService;
 use App\Models\Auth\PasswordPolicy;
 use App\Models\Auth\LoginThrottleService;
 use App\Models\Auth\CaptchaService;
+use App\Models\Auth\ConsentService;
 use App\Models\Mail\MailerService;
 use App\Core\Http\RequestValidator;
 use App\Core\Http\ResponseFormatter;
@@ -425,6 +426,40 @@ class AuthController extends Controller
     }
 
     /**
+     * Aceptar la versión vigente de los Términos y la Política de tratamiento de datos
+     *
+     * POST /api/auth/consent
+     *
+     * Para quienes ya tenían cuenta cuando se publicó la política (o una
+     * versión nueva): la app no los deja seguir hasta aceptarla. Guarda la
+     * prueba de la autorización (Ley 1581 de 2012) y devuelve el perfil.
+     *
+     * @param Request $request HTTP request
+     * @return Response HTTP response
+     */
+    public function acceptConsent(Request $request): Response
+    {
+        try {
+            $user = $request->getAttribute('user');
+
+            if ($user === null) {
+                return ResponseFormatter::unauthorized('Autenticación requerida');
+            }
+
+            (new ConsentService())->record((int)$user['id'], IPValidator::getClientIP($request), $request->userAgent());
+
+            return ResponseFormatter::success(
+                $this->buildUserProfile((int)$user['id']),
+                'Aceptaste los Términos y la Política de tratamiento de datos',
+                200
+            );
+
+        } catch (\Exception $e) {
+            return ErrorHandler::handleException($e);
+        }
+    }
+
+    /**
      * Promedio y cantidad de calificaciones recibidas en un rol.
      *
      * @param array  $userData Fila de getUserProfileData()
@@ -499,6 +534,12 @@ class AuthController extends Controller
                 'asCustomer' => self::ratingAverage($userData, 'customer'),
                 'asMechanic' => self::ratingAverage($userData, 'mechanic'),
             ],
+            // Autorización de tratamiento de datos: si no aceptó la versión
+            // vigente, la app le pide aceptarla antes de seguir
+            'consent'             => ConsentService::status(
+                $userData['consent_version'] ?? null,
+                $userData['consent_accepted_at'] ?? null
+            ),
             'mechanicProfile'     => in_array('mechanic', $roles, true) ? $applications->getApprovedProfile($userId) : null,
             'mechanicApplication' => $latestApplication !== null ? [
                 'id'          => (int)$latestApplication['id'],

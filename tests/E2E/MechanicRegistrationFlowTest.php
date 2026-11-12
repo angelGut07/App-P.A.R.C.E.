@@ -41,6 +41,7 @@ final class MechanicRegistrationFlowTest extends E2ETestCase
             'vehicle_color'                  => 'Blanco',
             'soat_number'                    => 'SOATMEC01',
             'tecnomecanica_number'           => 'TMMEC01',
+            'accept_terms'                   => true,
         ], $changes);
     }
 

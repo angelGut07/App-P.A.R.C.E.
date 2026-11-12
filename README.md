@@ -126,6 +126,14 @@ El CI de GitHub Actions (`.github/workflows/ci.yml`) corre en cada push:
 - **Roles:** cada petición pasa por autenticación y RBAC en el servidor; los mecánicos solo atienden los tipos de servicio que un administrador les aprobó.
 - `GET /api/health/system` indica si el chatbot, el correo y el CAPTCHA tienen clave configurada, sin mostrarla.
 
+## Protección de datos personales (Ley 1581 de 2012)
+
+- **Páginas públicas:** `/terminos` (Términos y condiciones) y `/privacidad` (Política de tratamiento de datos), enlazadas desde el pie de página.
+- **Autorización:** el registro exige aceptarlas (`accept_terms`). Cada aceptación se guarda como prueba en `user_consents`, con la versión, la fecha, la IP y el navegador (`ConsentService`).
+- **Cuentas existentes:** si un cliente o mecánico no ha aceptado la versión vigente, al entrar ve una pantalla que se lo pide antes de seguir (`ConsentGate`, `POST /api/auth/consent`).
+- **Cambiar los textos:** se sube la versión en `ConsentService::CURRENT_VERSION` y en `POLICY_VERSION` (`frontend/src/views/legal.ts`); todos deben aceptarla de nuevo.
+- **Antes de operar comercialmente:** completar en la política los datos del responsable (razón social o nombre, NIT, dirección y teléfono) y revisarla con asesoría legal.
+
 ## Logs y monitoreo
 
 - **En local** los logs quedan en `storage/logs/`, un archivo por tipo y por día: `error-AAAA-MM-DD.log` (errores con su traza), `database-…` (conexiones y consultas fallidas) y `requests-…` (una línea JSON por petición).

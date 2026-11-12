@@ -412,6 +412,12 @@ class RequestValidator
             }
         }
 
+        // Autorización de tratamiento de datos (Ley 1581 de 2012): debe ser
+        // previa, expresa e informada, así que sin ella no se crea la cuenta
+        if (filter_var($request->input('accept_terms'), FILTER_VALIDATE_BOOLEAN) !== true) {
+            $errors['accept_terms'] = ['Debes aceptar los Términos y la Política de tratamiento de datos para crear tu cuenta'];
+        }
+
         // Vehículo (opcional): si se envía la placa, se exigen los demás datos básicos
         $plate = $request->input('vehicle_plate');
         if ($plate !== null && $plate !== '') {

@@ -107,6 +107,10 @@ export default function RegisterPage() {
   const [captchaError, setCaptchaError] = useState('');
   const [captchaReset, setCaptchaReset] = useState(0);
 
+  // Autorización de tratamiento de datos, en el último paso
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [termsError, setTermsError] = useState('');
+
   const [form, setForm] = useState({
     email: '', password: '', confirmPassword: '',
     firstName: '', lastName: '', phone: '', idNumber: '',
@@ -223,6 +227,10 @@ export default function RegisterPage() {
    * y aquí se sube y adjunta su certificado.
    */
   const submit = async () => {
+    if (!acceptTerms) {
+      setTermsError('Debes aceptar los Términos y la Política de tratamiento de datos para crear tu cuenta');
+      return;
+    }
     if (captcha?.enabled && !captchaToken) {
       setCaptchaError('Confirma que no eres un robot para continuar');
       return;
@@ -248,6 +256,7 @@ export default function RegisterPage() {
       soat_number: form.soatCode,
       tecnomecanica_number: form.technoCode,
       captcha_token: captchaToken || undefined,
+      accept_terms: acceptTerms,
       ...(role === 'mechanic' ? {
         driver_license_expiration_date: form.licenseExpiration,
         certification_title: form.certTitle,
@@ -262,6 +271,11 @@ export default function RegisterPage() {
       const serverCaptchaError = fieldErrors(res).captcha;
       if (serverCaptchaError) {
         setCaptchaError(serverCaptchaError);
+        return;
+      }
+      const serverTermsError = fieldErrors(res).acceptTerms;
+      if (serverTermsError) {
+        setTermsError(serverTermsError);
         return;
       }
       const serverPasswordError = fieldErrors(res).password;
@@ -319,6 +333,25 @@ export default function RegisterPage() {
       error={captchaError}
     />
   ) : null;
+
+  // Autorización de tratamiento de datos (Ley 1581): obligatoria para crear la cuenta
+  const consentCheckbox = (
+    <div className="space-y-1">
+      <label className="flex items-start gap-3 cursor-pointer text-sm text-gray-300">
+        <input type="checkbox" checked={acceptTerms}
+          onChange={e => { setAcceptTerms(e.target.checked); if (e.target.checked) setTermsError(''); }}
+          className="mt-0.5 w-4 h-4 accent-yellow-500" />
+        <span>
+          Acepto los <Link to="/terminos" target="_blank" className="text-gold-400 hover:underline">Términos y condiciones</Link> y
+          autorizo el tratamiento de mis datos personales según la{' '}
+          <Link to="/privacidad" target="_blank" className="text-gold-400 hover:underline">Política de tratamiento de datos</Link>.
+        </span>
+      </label>
+      {termsError && (
+        <p className="flex items-center gap-1 text-xs text-red-400"><AlertCircle className="w-3 h-3 flex-shrink-0" />{termsError}</p>
+      )}
+    </div>
+  );
 
   // ── Clases de input ──────────────────────────────────────────────────────────
   const inputClass = (field: string) =>
@@ -648,6 +681,7 @@ export default function RegisterPage() {
                   </div>
                 )}
 
+                {role !== 'mechanic' && consentCheckbox}
                 {role !== 'mechanic' && captchaWidget}
 
                 <button type="submit" className="w-full btn-primary flex items-center justify-center gap-2" disabled={isSubmitting}>
@@ -722,6 +756,7 @@ export default function RegisterPage() {
                   onFileChange={(code, file) => setServiceFiles(prev => ({ ...prev, [code]: file }))}
                   error={touched.services ? errs.services : undefined}
                 />
+                {consentCheckbox}
                 {captchaWidget}
                 <button type="submit" className="w-full btn-primary" disabled={isSubmitting}>
                   {isSubmitting ? (

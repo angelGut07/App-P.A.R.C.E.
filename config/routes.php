@@ -54,6 +54,7 @@ $router->post('/api/auth/password-check', [AuthController::class, 'passwordCheck
 $router->get('/api/auth/captcha', [AuthController::class, 'captchaConfig']);
 $router->post('/api/auth/logout', [AuthController::class, 'logout'])->middleware($auth);
 $router->get('/api/auth/me', [AuthController::class, 'me'])->middleware($auth);
+$router->post('/api/auth/consent', [AuthController::class, 'acceptConsent'])->middleware($auth);
 $router->put('/api/auth/profile', [AuthController::class, 'profile'])->middleware($auth);
 $router->put('/api/auth/password', [AuthController::class, 'changePassword'])->middleware($auth);
 

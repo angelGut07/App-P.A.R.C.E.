@@ -374,6 +374,10 @@ class AuthService
                     ->createWithinTransaction($userId, $mechanicApplication);
             }
 
+            // Prueba de la autorización de tratamiento de datos que se aceptó
+            // en el formulario (RequestValidator la exige para registrarse)
+            (new ConsentService())->record($userId, $ipAddress, $userAgent);
+
             $sessionId = $this->sessionManager->create($userId, [
                 'ip_address' => $ipAddress,
                 'user_agent' => $userAgent,
@@ -412,7 +416,11 @@ class AuthService
                     (SELECT ROUND(AVG(r.score), 1) FROM ratings r
                       WHERE r.ratee_id = users.id AND r.rating_type = \'customer_to_mechanic\') AS mechanic_rating_average,
                     (SELECT COUNT(*) FROM ratings r
-                      WHERE r.ratee_id = users.id AND r.rating_type = \'customer_to_mechanic\') AS mechanic_rating_count
+                      WHERE r.ratee_id = users.id AND r.rating_type = \'customer_to_mechanic\') AS mechanic_rating_count,
+                    (SELECT uc.policy_version FROM user_consents uc WHERE uc.user_id = users.id
+                      ORDER BY uc.accepted_at DESC, uc.id DESC LIMIT 1) AS consent_version,
+                    (SELECT uc.accepted_at FROM user_consents uc WHERE uc.user_id = users.id
+                      ORDER BY uc.accepted_at DESC, uc.id DESC LIMIT 1) AS consent_accepted_at
              FROM users
              WHERE id = ? AND deleted_at IS NULL',
             [$userId]

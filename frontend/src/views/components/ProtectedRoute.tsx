@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth, homePathFor, UserRole } from '../../controllers/AuthContext';
+import ConsentGate from './ConsentGate';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -29,6 +30,13 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
     return <Navigate to={homePathFor(user.role)} replace />;
+  }
+
+  // Ley 1581: clientes y mecánicos deben aceptar la versión vigente de los
+  // Términos y la Política de datos antes de seguir (los administradores son
+  // quienes operan la plataforma, no usuarios del servicio)
+  if (user.role !== 'admin' && user.profile.consent && !user.profile.consent.upToDate) {
+    return <ConsentGate />;
   }
 
   return <>{children}</>;

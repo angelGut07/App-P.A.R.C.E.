@@ -33,9 +33,39 @@ class RequestValidatorRegistrationTest extends TestCase
             'password_confirmation' => 'Tr3n-Azul#Lluvia',
             'first_name'            => 'Ana',
             'last_name'             => 'Gomez',
+            'accept_terms'          => true,
         ], $overrides);
 
         return new Request();
+    }
+
+    public static function missingConsent(): array
+    {
+        return [
+            'sin el campo' => [null],
+            'en false'     => [false],
+            'texto "no"'   => ['no'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('missingConsent')]
+    public function testRegistrationRequiresAcceptingTheTermsAndDataPolicy(mixed $value): void
+    {
+        $result = RequestValidator::validateRegistrationRequest($this->makeRequest(['accept_terms' => $value]));
+
+        $this->assertFalse($result['valid']);
+        $this->assertSame(
+            ['Debes aceptar los Términos y la Política de tratamiento de datos para crear tu cuenta'],
+            $result['errors']['accept_terms']
+        );
+    }
+
+    public function testConsentAcceptsTheValuesFormsSend(): void
+    {
+        foreach (['1', 'true', 'on'] as $value) {
+            $result = RequestValidator::validateRegistrationRequest($this->makeRequest(['accept_terms' => $value]));
+            $this->assertTrue($result['valid'], "accept_terms = '{$value}' debe aceptarse");
+        }
     }
 
     public function testRegistrationSucceedsWithoutRoleField(): void

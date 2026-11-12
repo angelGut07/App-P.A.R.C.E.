@@ -203,6 +203,7 @@ class AuthServiceTest extends TestCase
             $this->stepWrite(1), // INSERT users
             $this->stepFetchOne(['id' => 3]), // SELECT roles WHERE slug = 'customer'
             $this->stepWrite(1), // INSERT user_roles
+            $this->stepWrite(1), // INSERT user_consents (prueba de la autorización, Ley 1581)
         ]);
         $this->sessionManager->method('create')->willReturn('new-session-id');
 

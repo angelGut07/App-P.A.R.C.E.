@@ -8,6 +8,8 @@ import RegisterPage from './views/pages/RegisterPage';
 import ForgotPasswordPage from './views/pages/ForgotPasswordPage';
 import ResetPasswordPage from './views/pages/ResetPasswordPage';
 import RoleSelectionPage from './views/pages/RoleSelectionPage';
+import TermsPage from './views/pages/TermsPage';
+import PrivacyPage from './views/pages/PrivacyPage';
 
 // Cliente
 import UserHomePage from './views/pages/UserHomePage';
@@ -59,6 +61,9 @@ export default function App() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/role-selection" element={<RoleSelectionPage />} />
+        {/* Legales: públicas, se deben poder leer antes de crear la cuenta */}
+        <Route path="/terminos" element={<TermsPage />} />
+        <Route path="/privacidad" element={<PrivacyPage />} />
 
         {/* Cliente */}
         <Route path="/home" element={user(<UserHomePage />)} />

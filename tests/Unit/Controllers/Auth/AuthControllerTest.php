@@ -93,6 +93,7 @@ class AuthControllerTest extends TestCase
         $request = $this->makeRequest('POST', body: [
             'email' => 'ya-existe@parce.local', 'password' => 'Tr3n-Azul#Lluvia',
             'password_confirmation' => 'Tr3n-Azul#Lluvia', 'first_name' => 'Ana', 'last_name' => 'Gomez',
+            'accept_terms' => true,
         ]);
 
         $response = $this->controller->register($request);
@@ -110,6 +111,7 @@ class AuthControllerTest extends TestCase
             $this->stepWrite(1), // INSERT users
             $this->stepFetchOne(['id' => 3]), // SELECT roles WHERE slug='customer'
             $this->stepWrite(1), // INSERT user_roles
+            $this->stepWrite(1), // INSERT user_consents (prueba de la autorización, Ley 1581)
             $this->stepWrite(1), // INSERT sessions (SessionManager::create)
             $this->stepFetchOne($this->activeUserRow(['id' => 55, 'email' => 'nueva@parce.local'])), // buildUserProfile: getUserProfileData
             $this->stepFetchAll([['slug' => 'customer']]), // buildUserProfile: roles
@@ -119,6 +121,7 @@ class AuthControllerTest extends TestCase
         $request = $this->makeRequest('POST', body: [
             'email' => 'nueva@parce.local', 'password' => 'Tr3n-Azul#Lluvia',
             'password_confirmation' => 'Tr3n-Azul#Lluvia', 'first_name' => 'Nueva', 'last_name' => 'Cuenta',
+            'accept_terms' => true,
         ]);
 
         $response = $this->controller->register($request);
