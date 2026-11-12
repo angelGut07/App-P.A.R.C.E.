@@ -82,12 +82,39 @@ php bin/parce migrate                 # aplica migraciones pendientes
 php bin/parce status                  # estado de las migraciones
 php bin/parce rollback                # revierte el último lote
 php bin/parce fresh                   # borra todo, migra y siembra (bloqueado en producción)
+php bin/parce maintenance             # todas las tareas de mantenimiento (las mismas del cron)
 php bin/parce expire-requests 30      # expira solicitudes sin atender hace más de 30 min
-php bin/parce cleanup-sessions        # borra sesiones vencidas y registros viejos de intentos fallidos
+php bin/parce cleanup-sessions        # borra sesiones vencidas, intentos fallidos viejos y enlaces de recuperación vencidos
 php bin/parce cleanup-logs 30         # borra logs de más de 30 días
 ```
 
-Las tres tareas de mantenimiento están pensadas para ejecutarse periódicamente (cron).
+## Mantenimiento programado
+
+Render no tiene cron en el plan gratis. Por eso el workflow `.github/workflows/maintenance.yml` llama cada 15 minutos a `POST /api/maintenance/run` (`MaintenanceService`), que:
+
+- expira las solicitudes que ningún mecánico aceptó en 30 minutos; el cliente las ve como "Expirado" y puede pedir otra;
+- borra las sesiones vencidas, los registros de intentos fallidos de más de un día y los enlaces de recuperación vencidos hace más de 7 días;
+- borra los archivos de log de más de 30 días (en Render no hay: los logs van a la pestaña Logs).
+
+El endpoint no usa sesión. Se autoriza con el header `X-Maintenance-Token`, que debe coincidir con la variable `MAINTENANCE_TOKEN` (al menos 32 caracteres). Sin esa variable responde 404, y cinco tokens equivocados desde una IP la bloquean 15 minutos.
+
+Para activarlo, una sola vez y en este orden:
+
+1. Genera un token aleatorio:
+   ```bash
+   php -r "echo bin2hex(random_bytes(32));"
+   ```
+2. En Render → *Environment*, crea `MAINTENANCE_TOKEN` con ese valor. El servicio se reinicia solo.
+3. En GitHub → *Settings → Secrets and variables → Actions*, crea el secreto `MAINTENANCE_TOKEN` con el mismo valor.
+4. En GitHub → *Actions → Mantenimiento*, pulsa *Run workflow* y revisa que el resumen diga "Mantenimiento completado".
+
+Si la app cambia de URL, crea también la variable (no secreto) `APP_URL` en el mismo lugar del paso 3; por defecto se usa https://parce.onrender.com.
+
+El workflow solo falla, y GitHub avisa por correo, cuando hay algo que corregir: el token no coincide o el endpoint no está activado. Si Render no despierta a tiempo o la base no responde, deja un aviso y lo intenta en la siguiente ejecución. `GET /api/health/system` indica si el token está configurado (`integrations.maintenance`), sin mostrarlo.
+
+GitHub pausa los workflows programados de los repositorios públicos tras 60 días sin commits. Si eso pasa, llega un correo y se reactivan desde la pestaña *Actions*.
+
+Cada ejecución cuenta como tráfico, y Render duerme un servicio gratis solo tras 15 minutos sin tráfico, así que casi nunca se duerme. Eso consume hasta 744 de las 750 horas gratis que Render da al mes a cada cuenta. Alcanza para un solo servicio gratis. Si la cuenta tiene otros, las horas se acaban y Render suspende los servicios gratis hasta el mes siguiente.
 
 ## Pruebas
 

@@ -15,6 +15,9 @@ final class ApiClient
     /** @var array<string, string> Cookies vigentes, nombre => valor */
     private array $cookies = [];
 
+    /** @var array<string, string> Headers adicionales, nombre => valor */
+    private array $headers = [];
+
     /**
      * @param string $baseUrl    URL base de la API (termina en /api)
      * @param string $activeRole Vista activa: customer, mechanic o administrator
@@ -23,6 +26,18 @@ final class ApiClient
         private readonly string $baseUrl,
         private readonly string $activeRole
     ) {
+    }
+
+    /**
+     * Copia de este cliente que además envía un header en cada petición
+     * (p. ej. el token del mantenimiento programado)
+     */
+    public function withHeader(string $name, string $value): self
+    {
+        $copy = clone $this;
+        $copy->headers[$name] = $value;
+
+        return $copy;
     }
 
     public function get(string $path): ApiResponse
@@ -62,6 +77,9 @@ final class ApiClient
     private function send(string $method, string $path, ?array $json = null, ?array $multipart = null): ApiResponse
     {
         $headers = ['Accept: application/json', 'X-Active-Role: ' . $this->activeRole];
+        foreach ($this->headers as $name => $value) {
+            $headers[] = "{$name}: {$value}";
+        }
         if ($this->cookies !== []) {
             $pairs = array_map(fn(string $name, string $value) => "{$name}={$value}", array_keys($this->cookies), $this->cookies);
             $headers[] = 'Cookie: ' . implode('; ', $pairs);

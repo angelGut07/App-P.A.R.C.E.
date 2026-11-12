@@ -90,6 +90,9 @@ if ($probe === false) {
 $port = (int)substr((string)strrchr((string)stream_socket_get_name($probe, false), ':'), 1);
 fclose($probe);
 
+// Token del mantenimiento programado, nuevo en cada corrida (MaintenanceFlowTest)
+define('E2E_MAINTENANCE_TOKEN', bin2hex(random_bytes(32)));
+
 $uploads = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'parce-e2e-uploads';
 if (!is_dir($uploads)) {
     mkdir($uploads, 0777, true);
@@ -109,6 +112,7 @@ $settings = [
     'DB_PASSWORD'          => $db['password'],
     'DB_SSL_CA'            => '',
     'UPLOADS_PATH'         => $uploads,
+    'MAINTENANCE_TOKEN'    => E2E_MAINTENANCE_TOKEN,
     // Apagados: la suite nunca envía correos ni llama servicios externos
     'RESEND_API_KEY'       => '',
     'TURNSTILE_SITE_KEY'   => '',

@@ -42,6 +42,8 @@ services:
         sync: false
       - key: TURNSTILE_SECRET_KEY # CAPTCHA: clave secreta, solo en el servidor
         sync: false
+      - key: MAINTENANCE_TOKEN    # mantenimiento programado: el mismo valor del secreto de GitHub Actions
+        sync: false
       - key: RUN_MIGRATIONS
         value: "true"
       - key: SEED_DEMO            # "true" solo en un entorno de pruebas

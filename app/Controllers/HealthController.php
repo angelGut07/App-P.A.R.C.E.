@@ -143,11 +143,13 @@ class HealthController extends Controller
         $checks['logs'] = ['channel' => Logger::channel()];
 
         // Integraciones externas: solo si tienen clave, nunca su valor. Sin
-        // ellas la app funciona, pero el asistente y los correos no.
+        // ellas la app funciona, pero el asistente, los correos y el
+        // mantenimiento programado (cron de GitHub Actions) no.
         $checks['integrations'] = [
-            'chatbot' => trim((string)($_ENV['GROQ_API_KEY'] ?? '')) !== '' ? 'configured' : 'missing',
-            'mail'    => trim((string)($_ENV['RESEND_API_KEY'] ?? '')) !== '' ? 'configured' : 'missing',
-            'captcha' => (new CaptchaService())->isEnabled() ? 'configured' : 'missing',
+            'chatbot'     => trim((string)($_ENV['GROQ_API_KEY'] ?? '')) !== '' ? 'configured' : 'missing',
+            'mail'        => trim((string)($_ENV['RESEND_API_KEY'] ?? '')) !== '' ? 'configured' : 'missing',
+            'captcha'     => (new CaptchaService())->isEnabled() ? 'configured' : 'missing',
+            'maintenance' => MaintenanceController::configuredToken() !== null ? 'configured' : 'missing',
         ];
 
         // Verificar versión de PHP

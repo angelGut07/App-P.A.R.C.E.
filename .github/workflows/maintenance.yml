@@ -1,0 +1,95 @@
+# Mantenimiento programado de P.A.R.C.E
+#
+# Render no tiene cron en el plan gratis, así que este workflow llama cada
+# 15 minutos a POST /api/maintenance/run (MaintenanceController), que:
+#   - expira las solicitudes que ningún mecánico aceptó en 30 minutos;
+#   - borra sesiones vencidas, intentos fallidos viejos, enlaces de
+#     recuperación vencidos y logs antiguos.
+#
+# Configuración, una sola vez y en este orden (detalle en el README,
+# sección "Mantenimiento programado"):
+#   1. Render → Environment: MAINTENANCE_TOKEN con un valor aleatorio de 64
+#      caracteres, generado con: php -r "echo bin2hex(random_bytes(32));"
+#   2. GitHub → Settings → Secrets and variables → Actions: el secreto
+#      MAINTENANCE_TOKEN con el mismo valor.
+#   3. Solo si la app no está en https://parce.onrender.com: la variable
+#      (no secreto) APP_URL con la URL pública.
+#
+# Mientras falte el secreto, el workflow no hace nada y termina en verde. Si
+# el servidor no responde (Render tarda en despertar, una caída), deja un
+# aviso y lo intenta en la siguiente ejecución: las caídas las vigila el
+# monitor de salud. Solo falla, y GitHub avisa por correo, cuando hay algo
+# que corregir: el token no coincide o el endpoint no está activado.
+#
+# GitHub pausa los workflows programados de un repositorio público tras 60
+# días sin commits; se reactivan desde la pestaña Actions.
+name: Mantenimiento
+
+on:
+  schedule:
+    # Cada 15 minutos, lejos del inicio de la hora (cuando GitHub más se atrasa)
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch: {}
+
+# No necesita el código del repositorio ni permisos sobre él
+permissions: {}
+
+concurrency:
+  group: mantenimiento
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: Ejecutar mantenimiento
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Llamar a POST /api/maintenance/run
+        env:
+          MAINTENANCE_TOKEN: ${{ secrets.MAINTENANCE_TOKEN }}
+          APP_URL: ${{ vars.APP_URL || 'https://parce.onrender.com' }}
+          RETRY_DELAY: 30
+        run: |
+          if [ -z "$MAINTENANCE_TOKEN" ]; then
+            echo "::notice::Falta el secreto MAINTENANCE_TOKEN: el mantenimiento programado está apagado."
+            exit 0
+          fi
+
+          url="${APP_URL%/}/api/maintenance/run"
+          echo "Llamando a ${url}"
+
+          for attempt in 1 2 3 4; do
+            status=$(curl --silent --show-error --max-time 90 \
+              --request POST \
+              --header "X-Maintenance-Token: ${MAINTENANCE_TOKEN}" \
+              --header 'Accept: application/json' \
+              --output response.json --write-out '%{http_code}' \
+              "$url") || status=000
+
+            if [ "$status" = 200 ] && jq -e '.success == true' response.json > /dev/null 2>&1; then
+              echo "Mantenimiento completado:"
+              jq '.data' response.json
+              exit 0
+            fi
+
+            # Sin respuesta, o una página que no es la API (Render despertando): se reintenta
+            case "$status" in
+              000|200|502|503|504) ;;
+              *) break ;;
+            esac
+            echo "Intento ${attempt}: el servidor no está disponible (HTTP ${status})"
+            if [ "$attempt" -lt 4 ]; then
+              sleep "$RETRY_DELAY"
+            fi
+          done
+
+          detail=$(jq -r '.error // .message // empty' response.json 2>/dev/null || true)
+          case "$status" in
+            000|200|502|503|504)
+              echo "::warning::El servidor no está disponible (HTTP ${status})${detail:+: ${detail}}. Se intenta de nuevo en la próxima ejecución."
+              ;;
+            *)
+              echo "::error::El mantenimiento falló (HTTP ${status}): ${detail:-sin detalle}"
+              exit 1
+              ;;
+          esac

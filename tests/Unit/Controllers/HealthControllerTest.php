@@ -136,6 +136,26 @@ class HealthControllerTest extends TestCase
         $this->assertSame(Logger::channel(), $body['data']['checks']['logs']['channel']);
     }
 
+    public function testSystemSaysWhetherScheduledMaintenanceIsConfiguredWithoutShowingTheToken(): void
+    {
+        $this->mockHealthyDatabase();
+        $envBackup = $_ENV;
+        $token = str_repeat('7f', 32);
+
+        try {
+            unset($_ENV['MAINTENANCE_TOKEN']);
+            $body = $this->responseBody($this->controller->system($this->makeRequest('GET')));
+            $this->assertSame('missing', $body['data']['checks']['integrations']['maintenance']);
+
+            $_ENV['MAINTENANCE_TOKEN'] = $token;
+            $body = $this->responseBody($this->controller->system($this->makeRequest('GET')));
+            $this->assertSame('configured', $body['data']['checks']['integrations']['maintenance']);
+            $this->assertStringNotContainsString($token, json_encode($body));
+        } finally {
+            $_ENV = $envBackup;
+        }
+    }
+
     public function testSystemReturns503WithUnhealthyOverallStatusWhenTheDatabaseIsUnhealthy(): void
     {
         $this->mockUnhealthyDatabase();

@@ -66,11 +66,18 @@ final class Logger
 
     /**
      * Archivo del día para una categoría (solo se usa con el destino "file").
-     * Un archivo por día permite que `php bin/parce cleanup-logs` borre los viejos.
+     * Un archivo por día permite que el mantenimiento borre los viejos
+     * (MaintenanceService::deleteOldLogFiles()).
      */
     public static function filePath(string $category): string
     {
-        return dirname(__DIR__, 2) . '/storage/logs/' . $category . '-' . date('Y-m-d') . '.log';
+        return self::directory() . '/' . $category . '-' . date('Y-m-d') . '.log';
+    }
+
+    /** Carpeta de los archivos de log (storage/logs) */
+    public static function directory(): string
+    {
+        return dirname(__DIR__, 2) . '/storage/logs';
     }
 
     private static function env(string $key): ?string

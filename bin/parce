@@ -8,8 +8,9 @@
  *   php bin/parce status                  Estado de las migraciones
  *   php bin/parce seed                    Carga los datos de demostración
  *   php bin/parce fresh                   Revierte todo, migra y siembra (solo local)
+ *   php bin/parce maintenance             Todas las tareas de mantenimiento (las mismas que corre el cron)
  *   php bin/parce expire-requests [min]   Expira solicitudes pendientes sin atender (por defecto 30 min)
- *   php bin/parce cleanup-sessions        Borra sesiones vencidas y registros viejos de intentos fallidos
+ *   php bin/parce cleanup-sessions        Borra sesiones vencidas, intentos fallidos viejos y enlaces de recuperación vencidos
  *   php bin/parce cleanup-logs [días]     Borra logs más antiguos que N días (por defecto 30)
  */
 
@@ -20,8 +21,7 @@ require_once BASE_PATH . '/vendor/autoload.php';
 use App\Core\Database;
 use App\Core\EnvLoader;
 use App\Core\MigrationRunner;
-use App\Models\Auth\LoginThrottleService;
-use App\Models\Auth\SessionManager;
+use App\Models\Maintenance\MaintenanceService;
 
 EnvLoader::load(EnvLoader::path(BASE_PATH));
 
@@ -40,6 +40,7 @@ $command = $argv[1] ?? 'help';
 $arg = $argv[2] ?? null;
 $runner = fn() => new MigrationRunner(BASE_PATH . '/database/migrations');
 $print = fn(array $lines) => array_map(fn($line) => print($line . PHP_EOL), $lines);
+$report = fn(string $summary) => print(date('Y-m-d H:i:s') . " — {$summary}." . PHP_EOL);
 
 $seed = function (): void {
     require_once BASE_PATH . '/database/seeders/DatabaseSeeder.php';
@@ -74,37 +75,34 @@ try {
             $seed();
             break;
 
+        case 'maintenance':
+            $done = (new MaintenanceService())->runAll();
+            $report("{$done['expired_requests']} solicitud(es) expirada(s); eliminados: {$done['sessions']} sesión(es) vencida(s), "
+                . "{$done['login_throttles']} registro(s) de intentos fallidos, {$done['password_reset_tokens']} enlace(s) "
+                . "de recuperación y {$done['log_files']} archivo(s) de log");
+            break;
+
         case 'expire-requests':
-            $minutes = max(1, (int)($arg ?? 30));
-            $expired = Database::update(
-                'service_requests',
-                ['status' => 'expired', 'expired_at' => date('Y-m-d H:i:s')],
-                'status = ? AND requested_at < (NOW() - INTERVAL ? MINUTE)',
-                ['pending', $minutes]
-            );
-            echo date('Y-m-d H:i:s') . " — {$expired} solicitud(es) pendiente(s) expirada(s) (más de {$minutes} min).\n";
+            $minutes = max(1, (int)($arg ?? MaintenanceService::REQUEST_TIMEOUT_MINUTES));
+            $expired = (new MaintenanceService())->expireUnattendedRequests($minutes);
+            $report("{$expired} solicitud(es) pendiente(s) expirada(s) (más de {$minutes} min)");
             break;
 
         case 'cleanup-sessions':
-            $deleted = (new SessionManager())->cleanup();
-            $throttles = (new LoginThrottleService())->cleanup();
-            echo date('Y-m-d H:i:s') . " — {$deleted} sesión(es) vencida(s) y {$throttles} registro(s) de intentos fallidos eliminados.\n";
+            $done = (new MaintenanceService())->cleanupAuthRecords();
+            $report("eliminados: {$done['sessions']} sesión(es) vencida(s), {$done['login_throttles']} registro(s) "
+                . "de intentos fallidos y {$done['password_reset_tokens']} enlace(s) de recuperación");
             break;
 
         case 'cleanup-logs':
-            $cutoff = time() - max(1, (int)($arg ?? 30)) * 86400;
-            $deleted = 0;
-            foreach (glob(BASE_PATH . '/storage/logs/*.log') ?: [] as $file) {
-                if (filemtime($file) < $cutoff && unlink($file)) {
-                    $deleted++;
-                }
-            }
-            echo date('Y-m-d H:i:s') . " — {$deleted} archivo(s) de log eliminado(s).\n";
+            $days = max(1, (int)($arg ?? MaintenanceService::LOG_RETENTION_DAYS));
+            $deleted = (new MaintenanceService())->deleteOldLogFiles($days);
+            $report("{$deleted} archivo(s) de log eliminado(s)");
             break;
 
         default:
             $lines = file(__FILE__);
-            echo implode('', array_slice($lines, 3, 10));
+            echo implode('', array_slice($lines, 3, 11));
     }
 } catch (Throwable $e) {
     fwrite(STDERR, 'Error: ' . $e->getMessage() . PHP_EOL);

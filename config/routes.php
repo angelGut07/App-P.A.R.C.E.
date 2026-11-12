@@ -12,6 +12,7 @@ use App\Controllers\Auth\AuthController;
 use App\Controllers\ChatbotController;
 use App\Controllers\HealthController;
 use App\Controllers\InventoryController;
+use App\Controllers\MaintenanceController;
 use App\Controllers\MechanicApplicationController;
 use App\Controllers\PaymentController;
 use App\Controllers\PQRController;
@@ -43,6 +44,9 @@ $admin    = [AuthMiddleware::class, [RBACMiddleware::class, ['administrator', 's
 $router->get('/api/health', [HealthController::class, 'index']);
 $router->get('/api/health/database', [HealthController::class, 'database']);
 $router->get('/api/health/system', [HealthController::class, 'system']);
+
+// ── Mantenimiento programado (lo llama GitHub Actions con X-Maintenance-Token) ──
+$router->post('/api/maintenance/run', [MaintenanceController::class, 'run']);
 
 // ── Autenticación ───────────────────────────────────────────────────────────
 $router->get('/api/auth/health', [AuthController::class, 'health']);

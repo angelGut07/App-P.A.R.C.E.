@@ -250,6 +250,9 @@ export default function ServiceInProgressPage() {
             {request.status === 'cancelled' && request.cancellationReason && (
               <p className="text-sm text-red-300">Motivo de cancelación: {request.cancellationReason}</p>
             )}
+            {request.status === 'expired' && (
+              <p className="text-sm text-gray-300">Ningún mecánico aceptó tu solicitud a tiempo. Puedes pedir el servicio otra vez.</p>
+            )}
 
             <div className="pt-2 space-y-3 mt-auto">
               {request.status === 'completed' && (
