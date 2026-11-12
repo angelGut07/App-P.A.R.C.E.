@@ -30,6 +30,12 @@ use App\Core\MigrationRunner;
 const E2E_DATABASE = 'parce_e2e';
 const E2E_SERVER_LOG = BASE_PATH . '/storage/logs/e2e-server.log';
 
+// Las pruebas arman fechas ("hoy" en un ingreso de mercancía) en la misma zona
+// horaria de la app. Sin esto, en el CI (UTC) "hoy" ya puede ser "mañana" para
+// la API, que lo rechaza como fecha futura.
+const E2E_TIMEZONE = 'America/Bogota';
+date_default_timezone_set(E2E_TIMEZONE);
+
 /** Detiene la suite con un mensaje claro (antes de correr cualquier prueba). */
 function e2e_abort(string $message): never
 {
@@ -93,6 +99,7 @@ $settings = [
     'APP_ENV'              => 'local',
     'APP_DEBUG'            => 'false',
     'APP_URL'              => "http://127.0.0.1:{$port}",
+    'APP_TIMEZONE'         => E2E_TIMEZONE,
     'LOG_CHANNEL'          => 'stderr',
     'DB_CONNECTION'        => 'mysql',
     'DB_HOST'              => $db['host'],
