@@ -4,11 +4,11 @@ import AdminLayout, { SearchBox, StatCard } from '../../components/admin/AdminLa
 import { Alert, Badge, EmptyState, Pagination } from '../../components/ui';
 import { adminService, errorMessage } from '../../../services';
 import type { AdminVehicle } from '@/models';
-import { formatDate, fullName } from '../../format';
+import { formatDate, fullName, isExpiredDate } from '../../format';
 
 function docBadge(date: string | null, number: string | null) {
   if (!date) return <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">{number ? 'Sin fecha de vencimiento' : 'Sin registrar'}</Badge>;
-  const expired = new Date(date).getTime() < Date.now();
+  const expired = isExpiredDate(date);
   return (
     <Badge className={expired ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-green-500/20 text-green-400 border-green-500/30'}>
       {expired ? 'Vencido' : 'Vigente'} · {formatDate(date, false)}
@@ -16,7 +16,7 @@ function docBadge(date: string | null, number: string | null) {
   );
 }
 
-const isExpired = (date: string | null) => !date || new Date(date).getTime() < Date.now();
+const isExpired = (date: string | null) => !date || isExpiredDate(date);
 
 /** Vehículos registrados en la plataforma con el estado de su SOAT y tecnomecánica. */
 export default function AdminVehiclesPage() {

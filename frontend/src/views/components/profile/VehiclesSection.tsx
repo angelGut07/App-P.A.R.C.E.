@@ -3,7 +3,7 @@ import { Car, Plus, Star, Trash2, Edit2 } from 'lucide-react';
 import { errorMessage, fieldErrors, vehicleService } from '../../../services';
 import type { FuelType, Vehicle, VehicleInput, VehicleType } from '@/models';
 import { Alert, Badge, Field, Modal, SectionTitle } from '../ui';
-import { formatDate } from '../../format';
+import { daysUntil, formatDate } from '../../format';
 
 const VEHICLE_TYPES: Record<VehicleType, string> = {
   sedan: 'Automóvil', suv: 'Camioneta', truck: 'Camión', motorcycle: 'Moto', van: 'Van', other: 'Otro',
@@ -23,7 +23,8 @@ function documentBadge(date: string | null, number: string | null) {
   if (!date) {
     return <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">{number ? `N.º ${number} · sin fecha de vencimiento` : 'Sin registrar'}</Badge>;
   }
-  const days = (new Date(date).getTime() - Date.now()) / 86400000;
+  // En días calendario y hora local: el último día de vigencia (0) aún cuenta como vigente
+  const days = daysUntil(date);
   if (days < 0) return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">Vencido {formatDate(date, false)}</Badge>;
   if (days <= 30) return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">Vence {formatDate(date, false)}</Badge>;
   return <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Vigente hasta {formatDate(date, false)}</Badge>;

@@ -5,10 +5,22 @@ export const formatCOP = (value: number | string | null | undefined): string =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 })
     .format(Number(value ?? 0));
 
-/** "2026-10-22 19:41:55" (hora de Colombia, como la guarda el backend) → fecha legible */
+/** Fecha sin hora, como las de vencimiento: "2028-06-30" */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Convierte una fecha del backend en Date en hora local. new Date("2028-06-30")
+ * la toma como medianoche UTC, que en Colombia (UTC-5) cae el día anterior:
+ * por eso una fecha sin hora se lee como medianoche local.
+ */
+export function parseDate(value: string): Date {
+  return new Date(DATE_ONLY.test(value) ? `${value}T00:00:00` : value.replace(' ', 'T'));
+}
+
+/** "2026-10-22 19:41:55" o "2028-06-30" (hora de Colombia, como los guarda el backend) → fecha legible */
 export function formatDate(value: string | null | undefined, withTime = true): string {
   if (!value) return '—';
-  const date = new Date(value.replace(' ', 'T'));
+  const date = parseDate(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString('es-CO', withTime
     ? { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }
@@ -27,6 +39,17 @@ export function todayIso(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/**
+ * Un documento con vencimiento "AAAA-MM-DD" sigue vigente durante todo ese
+ * día, igual que en el backend (vencido solo si la fecha es anterior a hoy).
+ */
+export const isExpiredDate = (date: string): boolean => date < todayIso();
+
+/** Días que faltan para una fecha "AAAA-MM-DD": 0 = hoy, negativo = ya pasó */
+export function daysUntil(date: string): number {
+  return Math.round((parseDate(date).getTime() - parseDate(todayIso()).getTime()) / 86_400_000);
 }
 
 export const REQUEST_STATUS: Record<RequestStatus, { label: string; color: string }> = {
