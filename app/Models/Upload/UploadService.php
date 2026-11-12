@@ -82,6 +82,32 @@ class UploadService
         return str_starts_with($url, self::publicUrl(''));
     }
 
+    /**
+     * Borra del disco un archivo subido a partir de su URL pública (p. ej. al
+     * eliminar una cuenta). Solo actúa sobre nombres generados por store()
+     * ("categoría/usuario_aleatorio.ext"): una URL manipulada no puede apuntar
+     * a nada fuera de la carpeta de archivos.
+     *
+     * @return bool true si el archivo existía y se borró
+     */
+    public static function deleteByUrl(string $url): bool
+    {
+        if (!self::isUploadUrl($url)) {
+            return false;
+        }
+
+        $relative = substr($url, strlen(self::publicUrl('')));
+        $pattern = '#^(' . implode('|', self::CATEGORIES) . ')/\d+_[0-9a-f]{24}\.('
+            . implode('|', array_unique(self::MIME_EXTENSIONS)) . ')$#';
+        if (!preg_match($pattern, $relative)) {
+            return false;
+        }
+
+        $path = self::basePath() . '/' . $relative;
+
+        return is_file($path) && @unlink($path);
+    }
+
     private static function basePath(): string
     {
         return rtrim($_ENV['UPLOADS_PATH'] ?? (BASE_PATH . '/public/uploads'), '/');

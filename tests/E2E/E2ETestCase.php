@@ -15,6 +15,16 @@ abstract class E2ETestCase extends TestCase
     /** Contraseña de las cuentas demo del seeder (pública en el README; solo existe en bases de prueba) */
     protected const DEMO_PASSWORD = 'Parce2026*';
 
+    /**
+     * Todas las peticiones de la suite salen de 127.0.0.1, y el límite por IP
+     * (5 registros cada 15 minutos) se agotaría entre clases: cada clase
+     * empieza con los contadores en cero.
+     */
+    public static function setUpBeforeClass(): void
+    {
+        @unlink(BASE_PATH . '/storage/rate_limit.json');
+    }
+
     /** Cliente HTTP sin sesión, con la vista activa indicada */
     protected static function client(string $activeRole): ApiClient
     {

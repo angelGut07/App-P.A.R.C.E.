@@ -15,6 +15,7 @@ use App\Models\Auth\PasswordPolicy;
 use App\Models\Auth\LoginThrottleService;
 use App\Models\Auth\CaptchaService;
 use App\Models\Auth\ConsentService;
+use App\Models\Auth\AccountDeletionService;
 use App\Models\Mail\MailerService;
 use App\Core\Http\RequestValidator;
 use App\Core\Http\ResponseFormatter;
@@ -46,10 +47,12 @@ class AuthController extends Controller
     private PasswordResetService $passwordResetService;
     private LoginThrottleService $loginThrottle;
     private CaptchaService $captcha;
+    private MailerService $mailer;
 
     public function __construct()
     {
         $mailer = new MailerService();
+        $this->mailer = $mailer;
         $this->passwordHasher = new PasswordHasher();
         $this->sessionManager = new SessionManager();
         $this->authService = new AuthService($this->passwordHasher, $this->sessionManager);
@@ -456,6 +459,84 @@ class AuthController extends Controller
 
         } catch (\Exception $e) {
             return ErrorHandler::handleException($e);
+        }
+    }
+
+    /**
+     * Eliminar la cuenta propia (derecho de supresión, Ley 1581 de 2012)
+     *
+     * DELETE /api/auth/account   Body: { "password": "..." }
+     *
+     * Pide la contraseña para confirmar (con el mismo límite de intentos que
+     * el cambio de contraseña), anonimiza y borra los datos personales
+     * (AccountDeletionService), cierra todas las sesiones y avisa por correo.
+     *
+     * @param Request $request HTTP request
+     * @return Response HTTP response
+     */
+    public function deleteAccount(Request $request): Response
+    {
+        try {
+            $user = $request->getAttribute('user');
+            if ($user === null) {
+                return ResponseFormatter::unauthorized('Autenticación requerida');
+            }
+            $userId = (int)$user['id'];
+            $ipAddress = IPValidator::getClientIP($request);
+
+            $rateLimitCheck = RateLimiter::check('delete-account', $ipAddress);
+            if (!$rateLimitCheck['allowed']) {
+                return ResponseFormatter::rateLimitExceeded($rateLimitCheck['reset_at'] - time());
+            }
+
+            $jsonValidation = RequestValidator::parseJsonBody($request);
+            if (!$jsonValidation['valid']) {
+                return ResponseFormatter::error($jsonValidation['error'], null, $jsonValidation['statusCode']);
+            }
+
+            $password = $request->input('password');
+            if (!is_string($password) || $password === '') {
+                return ResponseFormatter::validationError(['password' => 'Escribe tu contraseña para confirmar']);
+            }
+
+            if (!$this->authService->verifyCurrentPassword($userId, $password)) {
+                RateLimiter::recordAttempt('delete-account', $ipAddress);
+                return ResponseFormatter::validationError(['password' => 'La contraseña no es correcta']);
+            }
+            RateLimiter::reset('delete-account', $ipAddress);
+
+            $deleted = (new AccountDeletionService($this->roleValidator, $this->loginThrottle))->delete($userId);
+            $emailSent = $this->sendAccountDeletedEmail($deleted['email'], $deleted['firstName']);
+
+            // emailSent: la app solo dice "te enviamos una confirmación" si de verdad salió
+            return ResponseFormatter::clearSessionCookie(
+                ResponseFormatter::success(['email_sent' => $emailSent], 'Eliminamos tu cuenta y tus datos personales', 200)
+            );
+
+        } catch (\Exception $e) {
+            return ErrorHandler::handleException($e);
+        }
+    }
+
+    /**
+     * Confirma por correo que la cuenta se eliminó. Si el correo no está
+     * configurado o falla, la eliminación ya ocurrió igual.
+     *
+     * @return bool true si el correo salió
+     */
+    private function sendAccountDeletedEmail(string $email, string $firstName): bool
+    {
+        $name = htmlspecialchars($firstName, ENT_QUOTES, 'UTF-8');
+        $html = "<p>Hola {$name}:</p>"
+            . '<p>Eliminamos tu cuenta de P.A.R.C.E y tus datos personales, como lo pediste.</p>'
+            . '<p>Conservamos, sin datos que te identifiquen, el historial de servicios y pagos que la ley nos obliga a guardar.</p>'
+            . '<p>Si no fuiste tú, escríbenos de inmediato a proyectoparce@gmail.com.</p>';
+
+        try {
+            return $this->mailer->send($email, 'Eliminamos tu cuenta de P.A.R.C.E', $html);
+        } catch (\Throwable $e) {
+            error_log('No se pudo enviar el correo de cuenta eliminada: ' . $e->getMessage());
+            return false;
         }
     }
 

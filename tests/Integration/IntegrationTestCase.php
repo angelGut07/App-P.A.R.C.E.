@@ -39,7 +39,7 @@ abstract class IntegrationTestCase extends TestCase
     {
         $pdo = Database::getConnection();
         $pdo->exec('SET FOREIGN_KEY_CHECKS=0');
-        foreach (['mechanic_application_services', 'mechanic_applications', 'login_throttles', 'user_roles', 'sessions', 'password_reset_tokens', 'users'] as $table) {
+        foreach (['mechanic_application_services', 'mechanic_applications', 'login_throttles', 'user_roles', 'sessions', 'password_reset_tokens', 'user_consents', 'service_requests', 'vehicle_documents', 'vehicles', 'users'] as $table) {
             $pdo->exec("TRUNCATE TABLE {$table}");
         }
         $pdo->exec('SET FOREIGN_KEY_CHECKS=1');

@@ -131,6 +131,12 @@ El CI de GitHub Actions (`.github/workflows/ci.yml`) corre en cada push:
 - **Páginas públicas:** `/terminos` (Términos y condiciones) y `/privacidad` (Política de tratamiento de datos), enlazadas desde el pie de página.
 - **Autorización:** el registro exige aceptarlas (`accept_terms`). Cada aceptación se guarda como prueba en `user_consents`, con la versión, la fecha, la IP y el navegador (`ConsentService`).
 - **Cuentas existentes:** si un cliente o mecánico no ha aceptado la versión vigente, al entrar ve una pantalla que se lo pide antes de seguir (`ConsentGate`, `POST /api/auth/consent`).
+- **Eliminar la cuenta** (derecho de supresión): desde *Mi perfil*, confirmando con la contraseña (`DELETE /api/auth/account`, `AccountDeletionService`). No se permite con un servicio en curso ni para administradores.
+  - Se anonimizan los datos de la cuenta (correo, nombre, cédula, teléfono, licencia) y la cuenta queda desactivada.
+  - Se borran las sesiones, las solicitudes de mecánico, los documentos y los archivos subidos.
+  - Los vehículos sin historial se borran; los demás quedan sin placa ni VIN.
+  - La ubicación de sus solicitudes se redondea a unos 1,1 km.
+  - Se conservan, sin datos personales, los servicios, los pagos, las PQR y la prueba de la autorización.
 - **Cambiar los textos:** se sube la versión en `ConsentService::CURRENT_VERSION` y en `POLICY_VERSION` (`frontend/src/views/legal.ts`); todos deben aceptarla de nuevo.
 - **Antes de operar comercialmente:** completar en la política los datos del responsable (razón social o nombre, NIT, dirección y teléfono) y revisarla con asesoría legal.
 

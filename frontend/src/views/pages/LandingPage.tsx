@@ -1,16 +1,35 @@
-import { Link } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Wrench, Clock, Headphones } from 'lucide-react';
+import { Wrench, Clock, Headphones, CheckCircle, X } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import WaveBackground from '../components/WaveBackground';
 
 export default function LandingPage() {
+  // Llega aquí después de eliminar la cuenta desde el perfil (DeleteAccountSection)
+  const location = useLocation();
+  const deletion = location.state as { accountDeleted?: boolean; emailSent?: boolean } | null;
+  const [accountDeleted, setAccountDeleted] = useState(Boolean(deletion?.accountDeleted));
+
   return (
     <div className="min-h-screen bg-[#050505]">
       {/* Fondo de ondas animadas — ocupa toda la pantalla */}
       <WaveBackground />
 
       <Navbar />
+
+      {accountDeleted && (
+        <div role="status" className="fixed top-20 inset-x-4 z-50 mx-auto max-w-xl flex items-start gap-3 p-4 rounded-xl border border-green-500/30 bg-dark-900/95 text-sm text-green-300 shadow-lg">
+          <CheckCircle className="w-5 h-5 flex-shrink-0" />
+          <span className="flex-1">
+            Eliminamos tu cuenta y tus datos personales.
+            {deletion?.emailSent && ' Te enviamos una confirmación al correo que tenías registrado.'}
+          </span>
+          <button onClick={() => setAccountDeleted(false)} aria-label="Cerrar aviso" className="text-green-300/70 hover:text-green-200">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Hero Section */}
       <section className="relative pt-32 pb-20 px-4 overflow-hidden">

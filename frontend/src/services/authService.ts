@@ -59,6 +59,9 @@ export const authService = {
   /** Acepta la versión vigente de los Términos y la Política de tratamiento de datos */
   acceptConsent: () => api.post<UserProfile>('/auth/consent'),
 
+  /** Elimina la cuenta propia (anonimiza los datos personales); se confirma con la contraseña */
+  deleteAccount: (password: string) => api.delete<{ emailSent: boolean }>('/auth/account', { password }),
+
   updateProfile: (data: ProfileInput) => api.put<UserProfile>('/auth/profile', data),
 
   changePassword: (currentPassword: string, newPassword: string) =>

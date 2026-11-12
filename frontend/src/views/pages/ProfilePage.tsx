@@ -9,6 +9,7 @@ import PasswordForm from '../components/profile/PasswordForm';
 import VehiclesSection from '../components/profile/VehiclesSection';
 import MechanicSection from '../components/profile/MechanicSection';
 import RatingSummary from '../components/profile/RatingSummary';
+import DeleteAccountSection from '../components/profile/DeleteAccountSection';
 import { useAuth } from '../../controllers/AuthContext';
 
 /**
@@ -43,6 +44,8 @@ export default function ProfilePage() {
           {!isAdmin && <div className="card p-6 sm:p-8"><VehiclesSection /></div>}
           {!isAdmin && <div className="card p-6 sm:p-8"><MechanicSection /></div>}
           <div className="card p-6 sm:p-8"><PasswordForm /></div>
+          {/* Derecho de supresión (Ley 1581); las cuentas de administrador se gestionan aparte */}
+          {!isAdmin && <div className="card p-6 sm:p-8"><DeleteAccountSection /></div>}
         </motion.div>
       </main>
     </div>

@@ -40,6 +40,11 @@ final class ApiClient
         return $this->send('PUT', $path, $body);
     }
 
+    public function delete(string $path, array $body = []): ApiResponse
+    {
+        return $this->send('DELETE', $path, $body);
+    }
+
     /**
      * Sube un archivo como multipart/form-data (el mismo formato de un <input type="file">)
      *
