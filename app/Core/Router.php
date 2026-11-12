@@ -2,6 +2,8 @@
 
 namespace App\Core;
 
+use App\Core\Http\ResponseFormatter;
+
 /**
  * Clase enrutadora de la aplicación
  *
@@ -156,8 +158,8 @@ class Router
             }
         }
 
-        // Ninguna ruta coincidió — retornar 404
-        return Response::error('Ruta no encontrada', null, 404);
+        // Ninguna ruta coincidió: 404 con el mismo formato de error que el resto de la API
+        return ResponseFormatter::notFound('Ruta no encontrada');
     }
 
     /**
@@ -214,9 +216,21 @@ class Router
     private function executeAction(callable|array $action, Request $request, array $params): Response
     {
         if (is_callable($action)) {
+            $params = $this->castRouteParams(new \ReflectionFunction(\Closure::fromCallable($action)), $params);
+            if ($params === null) {
+                return ResponseFormatter::notFound();
+            }
+
             $result = $action($request, ...$params);
         } elseif (is_array($action) && count($action) === 2) {
             [$controller, $method] = $action;
+
+            // Se valida antes de crear el controlador: un id inválido no debe
+            // instanciar servicios ni tocar la base de datos.
+            $params = $this->castRouteParams(new \ReflectionMethod($controller, $method), $params);
+            if ($params === null) {
+                return ResponseFormatter::notFound();
+            }
 
             if (is_string($controller)) {
                 $controller = new $controller();
@@ -241,6 +255,44 @@ class Router
         }
 
         return (new Response())->setContent($result);
+    }
+
+    /**
+     * Convierte los parámetros de la URL al tipo que declara la acción.
+     *
+     * El patrón {id} captura cualquier texto entre barras, pero las acciones
+     * declaran `int $id`. Sin esta conversión, /api/vehicles/abc lanzaba un
+     * TypeError y la API respondía 500. Un parámetro `int` acepta solo un
+     * entero no negativo escrito con dígitos ("12"; no "abc", "-1", "1.5",
+     * "012" ni un número que no quepa en un int). Cualquier otro valor no
+     * puede identificar un recurso, así que se responde 404 sin ejecutar la
+     * acción. Los parámetros `string` (p. ej. {code}) llegan sin cambios.
+     *
+     * @param \ReflectionFunctionAbstract $action Acción de la ruta; su primer parámetro es el Request
+     * @param array $params Valores capturados de la URL, en orden
+     * @return array|null Parámetros convertidos, o null si alguno no es válido
+     */
+    private function castRouteParams(\ReflectionFunctionAbstract $action, array $params): ?array
+    {
+        $declared = array_slice($action->getParameters(), 1);
+        $params = array_values($params);
+
+        foreach ($params as $index => $value) {
+            $type = isset($declared[$index]) ? $declared[$index]->getType() : null;
+            if (!$type instanceof \ReflectionNamedType || $type->getName() !== 'int') {
+                continue;
+            }
+
+            $id = ctype_digit($value)
+                ? filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]])
+                : false;
+            if ($id === false) {
+                return null;
+            }
+            $params[$index] = $id;
+        }
+
+        return $params;
     }
 
     /**
