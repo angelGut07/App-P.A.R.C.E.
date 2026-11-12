@@ -281,7 +281,8 @@ class AuthService
      * 'mechanic' únicamente lo asigna MechanicApplicationService::approve()
      * cuando un administrador la aprueba.
      *
-     * @param array       $profile             first_name, last_name, phone, id_number, driver_license_number
+     * @param array       $profile             first_name, last_name, phone, id_number, driver_license_number,
+     *                                         driver_license_expiration_date
      * @param array|null  $vehicle             Datos del vehículo (claves de VehicleService::create()) o null
      * @param array|null  $mechanicApplication Datos de la solicitud de mecánico o null
      * @return AuthResult Resultado con userId y sessionId del usuario recién creado
@@ -311,8 +312,11 @@ class AuthService
                     'last_name'                  => $profile['last_name'],
                     'phone'                      => $profile['phone'] ?? null,
                     'id_number'                  => $profile['id_number'] ?? null,
-                    'driver_license_number'      => $profile['driver_license_number'] ?? null,
-                    'driver_license_uploaded_at' => !empty($profile['driver_license_number']) ? date('Y-m-d H:i:s') : null,
+                    'driver_license_number'          => $profile['driver_license_number'] ?? null,
+                    'driver_license_expiration_date' => $profile['driver_license_expiration_date'] ?? null,
+                    'driver_license_uploaded_at'     => !empty($profile['driver_license_number']) || !empty($profile['driver_license_expiration_date'])
+                        ? date('Y-m-d H:i:s')
+                        : null,
                     'account_status'             => 'active',
                 ]);
             } catch (DatabaseException $e) {

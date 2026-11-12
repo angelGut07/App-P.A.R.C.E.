@@ -4,7 +4,7 @@ import AdminLayout, { StatCard } from '../../components/admin/AdminLayout';
 import { Alert, Badge, EmptyState, Modal } from '../../components/ui';
 import { adminService, errorMessage } from '../../../services';
 import type { AdminUser, ApplicationStatus, MechanicApplication, MechanicPerformance, MechanicServiceStatus } from '@/models';
-import { formatDate, fullName } from '../../format';
+import { formatDate, fullName, todayIso } from '../../format';
 
 const APP_STATUS: Record<ApplicationStatus, { label: string; color: string }> = {
   pending: { label: 'Pendiente', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
@@ -63,6 +63,14 @@ export default function AdminMechanicsPage() {
     setApprovedCodes(prev => (prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]));
 
   const leavesSomeOut = !!selected && approvedCodes.length < selected.services.length;
+
+  // Para aprobar, la licencia del solicitante debe tener número y vencimiento
+  // vigente (el backend lo exige). Si falta algo, se dice qué y no se deja aprobar.
+  const licenseIssue = !selected ? null
+    : !selected.driverLicenseNumber ? 'El solicitante no ha registrado el número de su licencia de conducción.'
+    : !selected.driverLicenseExpirationDate ? 'El solicitante no ha registrado la fecha de vencimiento de su licencia de conducción.'
+    : selected.driverLicenseExpirationDate < todayIso() ? `La licencia del solicitante venció el ${formatDate(selected.driverLicenseExpirationDate, false)}.`
+    : null;
 
   const decide = async (approve: boolean) => {
     if (!selected) return;
@@ -172,7 +180,7 @@ export default function AdminMechanicsPage() {
                 ['Certificación', selected.certificationTitle ?? '—'],
                 ['Especialidad', selected.specialty ?? '—'],
                 ['Experiencia', selected.yearsExperience != null ? `${selected.yearsExperience} años` : '—'],
-                ['Licencia', `${selected.driverLicenseNumber ?? '—'}${selected.driverLicenseExpirationDate ? ` (vence ${formatDate(selected.driverLicenseExpirationDate, false)})` : ''}`],
+                ['Licencia', `${selected.driverLicenseNumber ?? '—'} · ${selected.driverLicenseExpirationDate ? `vence ${formatDate(selected.driverLicenseExpirationDate, false)}` : 'sin fecha de vencimiento'}`],
               ].map(([label, value]) => (
                 <div key={label}><span className="text-gray-500 text-xs">{label}</span><p className="text-white">{value}</p></div>
               ))}
@@ -217,7 +225,11 @@ export default function AdminMechanicsPage() {
 
             {selected.status === 'pending' && (
               <>
-                <p className="text-xs text-gray-500">Para aprobar, la licencia de conducción del solicitante debe tener fecha de vencimiento vigente.</p>
+                {licenseIssue && (
+                  <Alert type="warning">
+                    {licenseIssue} No se puede aprobar hasta que la complete en su perfil, en «Licencia de conducción»; allí verá el aviso. Si no cumple, puedes rechazar la solicitud con el motivo.
+                  </Alert>
+                )}
                 <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
                   placeholder={leavesSomeOut ? 'Explica por qué no apruebas los servicios sin marcar (obligatorio)' : 'Motivo (obligatorio para rechazar)'}
                   className="input-field resize-none h-20" />
@@ -225,7 +237,7 @@ export default function AdminMechanicsPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <button disabled={busy || !rejectReason.trim()} onClick={() => decide(false)}
                     className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-600/20 border border-red-500/40 text-red-300 disabled:opacity-40"><X className="w-4 h-4" /> Rechazar todo</button>
-                  <button disabled={busy || approvedCodes.length === 0 || (leavesSomeOut && !rejectReason.trim())} onClick={() => decide(true)}
+                  <button disabled={busy || !!licenseIssue || approvedCodes.length === 0 || (leavesSomeOut && !rejectReason.trim())} onClick={() => decide(true)}
                     className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white disabled:opacity-40">
                     <Check className="w-4 h-4" /> {leavesSomeOut ? `Aprobar ${approvedCodes.length} de ${selected.services.length}` : 'Aprobar'}
                   </button>

@@ -379,6 +379,13 @@ class RequestValidator
             $errors['driver_license_number'] = ['El número de licencia no debe superar los 50 caracteres'];
         }
 
+        // Vencimiento de la licencia (AAAA-MM-DD), opcional salvo para mecánicos
+        $licenseExpiration = $request->input('driver_license_expiration_date');
+        $hasLicenseExpiration = $licenseExpiration !== null && $licenseExpiration !== '';
+        if ($hasLicenseExpiration && !self::isIsoDate((string)$licenseExpiration)) {
+            $errors['driver_license_expiration_date'] = ['La fecha de vencimiento debe tener el formato AAAA-MM-DD'];
+        }
+
         // Rol solicitado: 'customer' (por defecto) o 'mechanic'. Pedir 'mechanic'
         // NO concede el rol: la cuenta se crea como cliente y se abre una
         // solicitud que un administrador debe aprobar.
@@ -390,6 +397,13 @@ class RequestValidator
         if ($role === 'mechanic') {
             if (empty($license)) {
                 $errors['driver_license_number'] = ['La licencia de conducción es requerida para mecánicos'];
+            }
+            // Sin vencimiento vigente la solicitud no se puede aprobar ni el
+            // mecánico aceptar servicios: se pide desde el registro.
+            if (!$hasLicenseExpiration) {
+                $errors['driver_license_expiration_date'] = ['La fecha de vencimiento de la licencia es requerida para mecánicos'];
+            } elseif (!isset($errors['driver_license_expiration_date']) && (string)$licenseExpiration < date('Y-m-d')) {
+                $errors['driver_license_expiration_date'] = ['Tu licencia de conducción está vencida: renuévala para registrarte como mecánico'];
             }
             foreach (\App\Models\MechanicApplication\MechanicApplicationValidator::validateData(
                 \App\Models\MechanicApplication\MechanicApplicationValidator::extractData($request)
@@ -574,5 +588,16 @@ class RequestValidator
             'perPage' => $perPage,
             'offset'  => ($page - 1) * $perPage,
         ];
+    }
+
+    /**
+     * Indica si el valor es una fecha real con formato AAAA-MM-DD (rechaza
+     * "2026-02-30" o "12/05/2027")
+     */
+    private static function isIsoDate(string $value): bool
+    {
+        $date = \DateTime::createFromFormat('!Y-m-d', $value);
+
+        return $date !== false && $date->format('Y-m-d') === $value;
     }
 }

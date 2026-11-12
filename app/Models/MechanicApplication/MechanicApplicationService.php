@@ -133,20 +133,20 @@ class MechanicApplicationService
             );
         }
 
-        // La licencia completa (vencimiento y documento) se exige al
-        // aprobar; para abrir la solicitud basta con haberla registrado.
-        if (empty($user['driver_license_number'])) {
+        // La licencia con número y vencimiento vigente es requisito para
+        // aprobar la solicitud (approve()) y para aceptar servicios: se exige
+        // desde aquí para que nadie quede con una solicitud imposible de
+        // aprobar. Antes bastaba el número y las solicitudes hechas desde el
+        // registro, que no pedía el vencimiento, se quedaban sin poder aprobarse.
+        if (empty($user['driver_license_number']) || empty($user['driver_license_expiration_date'])) {
             throw new DomainException(
-                'Debes registrar tu licencia de conducción en tu perfil antes de solicitar ser mecánico',
+                'Antes de solicitar ser mecánico, registra en tu perfil el número y la fecha de vencimiento de tu licencia de conducción',
                 400
             );
         }
 
-        if (
-            !empty($user['driver_license_expiration_date'])
-            && $user['driver_license_expiration_date'] < date('Y-m-d')
-        ) {
-            throw new DomainException('Tu licencia de conducción está vencida', 400);
+        if ($user['driver_license_expiration_date'] < date('Y-m-d')) {
+            throw new DomainException('Tu licencia de conducción está vencida: renuévala y actualiza la fecha en tu perfil', 400);
         }
 
         $existingPending = Database::fetchOne(
@@ -526,7 +526,13 @@ class MechanicApplicationService
                 || empty($applicant['driver_license_expiration_date'])
                 || $applicant['driver_license_expiration_date'] < date('Y-m-d')
             ) {
-                throw new DomainException('Para aprobar, la licencia del solicitante debe tener número y una fecha de vencimiento vigente', 400);
+                // Solicitudes creadas antes de exigir el vencimiento: el
+                // solicitante lo completa en su perfil y ve el aviso allí.
+                throw new DomainException(
+                    'Para aprobar, la licencia del solicitante debe tener número y una fecha de vencimiento vigente. '
+                    . 'El solicitante debe completarla en su perfil, en "Licencia de conducción".',
+                    400
+                );
             }
 
             // Servicios: los elegidos se aprueban y el resto se rechaza

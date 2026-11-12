@@ -10,6 +10,8 @@ export interface RegisterInput {
   phone?: string;
   id_number?: string;
   driver_license_number?: string;
+  /** Vencimiento de la licencia, AAAA-MM-DD (obligatorio y vigente para mecánicos) */
+  driver_license_expiration_date?: string;
   role: 'customer' | 'mechanic';
   vehicle_plate?: string;
   vehicle_brand?: string;

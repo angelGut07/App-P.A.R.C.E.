@@ -18,6 +18,17 @@ export function formatDate(value: string | null | undefined, withTime = true): s
 export const fullName = (first?: string | null, last?: string | null): string =>
   [first, last].filter(Boolean).join(' ') || '—';
 
+/**
+ * Fecha de hoy "AAAA-MM-DD" en la hora local del navegador. No usar
+ * toISOString(): da la fecha en UTC, que en Colombia ya es "mañana" desde las
+ * 7 p. m., y el backend rechaza esas fechas por futuras.
+ */
+export function todayIso(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 export const REQUEST_STATUS: Record<RequestStatus, { label: string; color: string }> = {
   pending:     { label: 'Buscando mecánico', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
   assigned:    { label: 'Mecánico en camino', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },

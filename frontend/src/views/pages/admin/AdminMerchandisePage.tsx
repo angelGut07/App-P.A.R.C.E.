@@ -4,9 +4,7 @@ import AdminLayout from '../../components/admin/AdminLayout';
 import { Alert, EmptyState, Field, Modal, Pagination } from '../../components/ui';
 import { errorMessage, inventoryService } from '../../../services';
 import type { Product, Receipt, Supplier } from '@/models';
-import { formatCOP, formatDate, fullName } from '../../format';
-
-const todayISO = () => new Date().toISOString().slice(0, 10);
+import { formatCOP, formatDate, fullName, todayIso } from '../../format';
 
 interface Line { productId: number; quantity: string; unitCost: string }
 const EMPTY_LINE: Line = { productId: 0, quantity: '1', unitCost: '' };
@@ -26,7 +24,7 @@ export default function AdminMerchandisePage() {
   const [supplierId, setSupplierId] = useState(0);
   const [newSupplier, setNewSupplier] = useState({ name: '', tax_id: '', phone: '' });
   const [invoice, setInvoice] = useState('');
-  const [date, setDate] = useState(todayISO());
+  const [date, setDate] = useState(todayIso());
   const [lines, setLines] = useState<Line[]>([EMPTY_LINE]);
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -53,7 +51,7 @@ export default function AdminMerchandisePage() {
     setSupplierId(suppliers[0]?.id ?? 0);
     setNewSupplier({ name: '', tax_id: '', phone: '' });
     setInvoice('');
-    setDate(todayISO());
+    setDate(todayIso());
     setLines([EMPTY_LINE]);
     setFormError('');
     setShowForm(true);
@@ -158,7 +156,7 @@ export default function AdminMerchandisePage() {
               <input value={invoice} onChange={e => setInvoice(e.target.value)} placeholder="FAC-2026-0001" className="input-field" required />
             </Field>
             <Field label="Fecha de llegada">
-              <input type="date" value={date} max={todayISO()} onChange={e => setDate(e.target.value)} className="input-field" required />
+              <input type="date" value={date} max={todayIso()} onChange={e => setDate(e.target.value)} className="input-field" required />
             </Field>
           </div>
 

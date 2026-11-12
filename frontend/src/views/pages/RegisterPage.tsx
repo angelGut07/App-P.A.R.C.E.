@@ -11,6 +11,7 @@ import { attachServiceDocuments, authService, errorMessage, fieldErrors, mechani
 import { useAuth } from '../../controllers/AuthContext';
 import { useServiceTypes } from '../../controllers/useServiceTypes';
 import { meetsPasswordRules } from '@/models/passwordPolicy';
+import { todayIso } from '../format';
 
 // ── Validadores colombianos ──────────────────────────────────────────────────
 
@@ -46,6 +47,18 @@ function validatePlate(value: string): string {
 function validateLicense(value: string): string {
   if (!value) return 'El código de licencia es requerido';
   if (value.trim().length < 6) return 'Código de licencia demasiado corto';
+  return '';
+}
+
+/**
+ * Vencimiento de la licencia (AAAA-MM-DD, como lo entrega <input type="date">).
+ * Para un mecánico debe estar vigente: sin eso un administrador no puede
+ * aprobar su solicitud ni él aceptar servicios.
+ */
+function validateLicenseExpiration(value: string): string {
+  if (!value) return 'La fecha de vencimiento es requerida';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return 'Fecha inválida';
+  if (value < todayIso()) return 'Tu licencia está vencida: renuévala para registrarte como mecánico';
   return '';
 }
 
@@ -97,7 +110,7 @@ export default function RegisterPage() {
   const [form, setForm] = useState({
     email: '', password: '', confirmPassword: '',
     firstName: '', lastName: '', phone: '', idNumber: '',
-    licenseCode: '', soatCode: '', technoCode: '',
+    licenseCode: '', licenseExpiration: '', soatCode: '', technoCode: '',
     vehicleBrand: '', vehicleModel: '', vehiclePlate: '',
     vehicleYear: '', vehicleColor: '',
     certTitle: '',
@@ -125,6 +138,7 @@ export default function RegisterPage() {
     phone:       validatePhone(form.phone),
     idNumber:    validateCedula(form.idNumber),
     licenseCode: validateLicense(form.licenseCode),
+    licenseExpiration: validateLicenseExpiration(form.licenseExpiration),
     vehicleBrand:  !form.vehicleBrand.trim() ? 'La marca es requerida' : '',
     vehicleModel:  !form.vehicleModel.trim() ? 'El modelo es requerido' : '',
     vehiclePlate:  validatePlate(form.vehiclePlate),
@@ -183,7 +197,7 @@ export default function RegisterPage() {
   const handleVehicle = async (e: React.FormEvent) => {
     e.preventDefault();
     const fields = ['vehicleBrand', 'vehicleModel', 'vehiclePlate', 'vehicleYear', 'vehicleColor', 'soatCode', 'technoCode'];
-    if (role === 'mechanic') fields.push('licenseCode');
+    if (role === 'mechanic') fields.push('licenseCode', 'licenseExpiration');
     touchAll(...fields);
     if (fields.some(f => errs[f as keyof typeof errs])) return;
 
@@ -234,7 +248,11 @@ export default function RegisterPage() {
       soat_number: form.soatCode,
       tecnomecanica_number: form.technoCode,
       captcha_token: captchaToken || undefined,
-      ...(role === 'mechanic' ? { certification_title: form.certTitle, services: selectedServices } : {}),
+      ...(role === 'mechanic' ? {
+        driver_license_expiration_date: form.licenseExpiration,
+        certification_title: form.certTitle,
+        services: selectedServices,
+      } : {}),
     });
 
     if (!res.success || !res.data?.user) {
@@ -250,6 +268,13 @@ export default function RegisterPage() {
       if (serverPasswordError) {
         setPasswordError(serverPasswordError);
         setStep('credentials');
+        return;
+      }
+      // La licencia del mecánico se escribe en el paso del vehículo: se vuelve allá con el motivo
+      const serverLicenseError = fieldErrors(res).driverLicenseExpirationDate ?? fieldErrors(res).driverLicenseNumber;
+      if (role === 'mechanic' && serverLicenseError) {
+        setSubmitError(serverLicenseError);
+        setStep('vehicle');
         return;
       }
       setSubmitError(errorMessage(res, 'No se pudo crear la cuenta'));
@@ -606,6 +631,20 @@ export default function RegisterPage() {
                       onBlur={() => touch('licenseCode')}
                       placeholder="LC-2024-XXXXXXXX" className={inputClass('licenseCode')} required />
                     <FieldFeedback error={errs.licenseCode} touched={!!touched.licenseCode} />
+                  </div>
+                )}
+
+                {role === 'mechanic' && (
+                  <div className="space-y-1">
+                    <label htmlFor="license-expiration" className="block text-sm font-medium text-gray-300">
+                      Fecha de vencimiento de la licencia
+                    </label>
+                    <input id="license-expiration" type="date" value={form.licenseExpiration} min={todayIso()}
+                      onChange={e => set('licenseExpiration', e.target.value)}
+                      onBlur={() => touch('licenseExpiration')}
+                      className={inputClass('licenseExpiration')} required />
+                    <FieldFeedback error={errs.licenseExpiration} touched={!!touched.licenseExpiration} />
+                    <p className="text-xs text-gray-500">Debe estar vigente: la revisamos para aprobar tu solicitud y la necesitas para aceptar servicios.</p>
                   </div>
                 )}
 

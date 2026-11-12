@@ -52,22 +52,84 @@ class RequestValidatorRegistrationTest extends TestCase
         $this->assertTrue($result['valid']);
     }
 
-    public function testMechanicRegistrationRequiresLicenseAndCertification(): void
+    public function testMechanicRegistrationRequiresLicenseWithExpirationAndCertification(): void
     {
         $result = RequestValidator::validateRegistrationRequest($this->makeRequest(['role' => 'mechanic']));
 
         $this->assertFalse($result['valid']);
         $this->assertArrayHasKey('driver_license_number', $result['errors']);
+        $this->assertArrayHasKey('driver_license_expiration_date', $result['errors']);
         $this->assertArrayHasKey('certification_title', $result['errors']);
+    }
+
+    /** Datos completos de un mecánico, con cambios opcionales */
+    private function mechanicRequest(array $changes = []): Request
+    {
+        return $this->makeRequest(array_merge([
+            'role'                           => 'mechanic',
+            'driver_license_number'          => 'LIC-2024-0001',
+            'driver_license_expiration_date' => date('Y-m-d', strtotime('+1 year')),
+            'certification_title'            => 'Técnico en Mecánica Automotriz',
+            'services'                       => ['battery', 'tire'],
+        ], $changes));
     }
 
     public function testMechanicRegistrationSucceedsWithLicenseAndCertification(): void
     {
+        $result = RequestValidator::validateRegistrationRequest($this->mechanicRequest());
+
+        $this->assertTrue($result['valid']);
+    }
+
+    public function testMechanicRegistrationAcceptsALicenseThatExpiresToday(): void
+    {
+        $result = RequestValidator::validateRegistrationRequest($this->mechanicRequest([
+            'driver_license_expiration_date' => date('Y-m-d'),
+        ]));
+
+        $this->assertTrue($result['valid']);
+    }
+
+    public function testMechanicRegistrationRejectsAnExpiredLicense(): void
+    {
+        $result = RequestValidator::validateRegistrationRequest($this->mechanicRequest([
+            'driver_license_expiration_date' => date('Y-m-d', strtotime('-1 day')),
+        ]));
+
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('vencida', $result['errors']['driver_license_expiration_date'][0]);
+    }
+
+    public static function invalidDates(): array
+    {
+        return [
+            'día que no existe' => ['2027-02-30'],
+            'otro formato'      => ['12/05/2027'],
+            'texto'             => ['mañana'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidDates')]
+    public function testLicenseExpirationMustBeARealIsoDate(string $value): void
+    {
+        $result = RequestValidator::validateRegistrationRequest($this->mechanicRequest([
+            'driver_license_expiration_date' => $value,
+        ]));
+
+        $this->assertFalse($result['valid']);
+        $this->assertSame(
+            ['La fecha de vencimiento debe tener el formato AAAA-MM-DD'],
+            $result['errors']['driver_license_expiration_date']
+        );
+    }
+
+    public function testCustomersDoNotNeedACurrentLicenseToRegister(): void
+    {
+        // Los clientes no necesitan licencia para pedir asistencia: la fecha es
+        // opcional y, si la escriben, solo se valida su formato
         $result = RequestValidator::validateRegistrationRequest($this->makeRequest([
-            'role'                  => 'mechanic',
-            'driver_license_number' => 'LIC-2024-0001',
-            'certification_title'   => 'Técnico en Mecánica Automotriz',
-            'services'              => ['battery', 'tire'],
+            'role'                           => 'customer',
+            'driver_license_expiration_date' => date('Y-m-d', strtotime('-1 month')),
         ]));
 
         $this->assertTrue($result['valid']);

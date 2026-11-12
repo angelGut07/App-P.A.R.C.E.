@@ -38,7 +38,8 @@ export default function ProfilePage() {
 
           {!isAdmin && <div className="card p-6 sm:p-8"><RatingSummary /></div>}
           <div className="card p-6 sm:p-8"><PersonalInfoForm /></div>
-          {!isAdmin && <div className="card p-6 sm:p-8"><DriverLicenseForm /></div>}
+          {/* id="licencia": el aviso de la sección de mecánico trae hasta aquí */}
+          {!isAdmin && <div id="licencia" className="card p-6 sm:p-8 scroll-mt-24"><DriverLicenseForm /></div>}
           {!isAdmin && <div className="card p-6 sm:p-8"><VehiclesSection /></div>}
           {!isAdmin && <div className="card p-6 sm:p-8"><MechanicSection /></div>}
           <div className="card p-6 sm:p-8"><PasswordForm /></div>

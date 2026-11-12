@@ -45,7 +45,13 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
         $result = $authService->register(
             'nuevo_' . bin2hex(random_bytes(4)) . '@test.local',
             (new PasswordHasher())->hash('Test12345!'),
-            ['first_name' => 'Nuevo', 'last_name' => 'Usuario', 'driver_license_number' => 'LIC-1'],
+            // El registro de mecánico exige la licencia con vencimiento vigente (RequestValidator)
+            [
+                'first_name'                     => 'Nuevo',
+                'last_name'                      => 'Usuario',
+                'driver_license_number'          => 'LIC-1',
+                'driver_license_expiration_date' => date('Y-m-d', strtotime('+1 year')),
+            ],
             '127.0.0.1',
             'PHPUnit-Integration',
             null,
@@ -87,6 +93,23 @@ class MechanicApplicationFlowTest extends IntegrationTestCase
         $this->assertDomainException(400, function () use ($userId) {
             $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz', 'justification' => 'Justificacion suficientemente larga para pasar validacion.']);
         });
+    }
+
+    public function testCreateFailsWhenTheLicenseHasNumberButNoExpirationDate(): void
+    {
+        // El caso del reporte "bug_aceptar-mecanic": con número pero sin
+        // vencimiento la solicitud se creaba y luego nadie podía aprobarla
+        $userId = $this->createUser();
+        $this->setLicense($userId);
+        Database::update('users', ['driver_license_expiration_date' => null], 'id = ?', [$userId]);
+
+        try {
+            $this->service->create($userId, ['services' => ['battery'], 'certification_title' => 'Técnico automotriz']);
+            $this->fail('La solicitud no debe crearse sin fecha de vencimiento de la licencia');
+        } catch (DomainException $e) {
+            $this->assertSame(400, $e->getStatusCode());
+            $this->assertStringContainsString('fecha de vencimiento', $e->getMessage());
+        }
     }
 
     public function testCreateFailsWithExpiredLicense(): void

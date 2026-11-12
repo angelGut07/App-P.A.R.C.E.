@@ -134,6 +134,8 @@ class AuthController extends Controller
                 'driver_license_number' => $optional('driver_license_number') !== null
                     ? strtoupper($optional('driver_license_number'))
                     : null,
+                // Ya validada como AAAA-MM-DD (obligatoria y vigente para mecánicos)
+                'driver_license_expiration_date' => $optional('driver_license_expiration_date'),
             ];
 
             // Vehículo opcional (el validador ya exige marca/modelo/año si viene la placa)

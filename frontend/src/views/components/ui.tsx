@@ -24,12 +24,15 @@ export function Field({ label, error, children }: { label: string; error?: strin
   );
 }
 
-export function Alert({ type, children }: { type: 'error' | 'success'; children: React.ReactNode }) {
+/** Mensaje en un recuadro: error (rojo), éxito (verde) o advertencia (amarillo, falta algo por hacer) */
+export function Alert({ type, children }: { type: 'error' | 'success' | 'warning'; children: React.ReactNode }) {
   if (!children) return null;
-  const styles = type === 'error'
-    ? 'bg-red-500/10 border-red-500/30 text-red-400'
-    : 'bg-green-500/10 border-green-500/30 text-green-400';
-  const Icon = type === 'error' ? AlertCircle : Check;
+  const styles = {
+    error: 'bg-red-500/10 border-red-500/30 text-red-400',
+    success: 'bg-green-500/10 border-green-500/30 text-green-400',
+    warning: 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300',
+  }[type];
+  const Icon = type === 'success' ? Check : AlertCircle;
   return (
     <div className={`flex items-start gap-2 p-3 border rounded-xl text-sm ${styles}`}>
       <Icon className="w-4 h-4 flex-shrink-0 mt-0.5" /> <span>{children}</span>

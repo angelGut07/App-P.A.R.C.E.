@@ -3,7 +3,7 @@ import { Award, CheckCircle2, Clock, Plus, Wrench, XCircle } from 'lucide-react'
 import { useAuth } from '../../../controllers/AuthContext';
 import { useServiceTypes } from '../../../controllers/useServiceTypes';
 import { attachServiceDocuments, errorMessage, fieldErrors, mechanicApplicationService, uploadService } from '../../../services';
-import type { MechanicApplicationServiceItem } from '@/models';
+import type { DriverLicense, MechanicApplicationServiceItem } from '@/models';
 import { Alert, Field, SectionTitle } from '../ui';
 import ServiceSelector from '../ServiceSelector';
 import { formatDate } from '../../format';
@@ -27,6 +27,33 @@ function RequestedServices({ services }: { services: MechanicApplicationServiceI
   );
 }
 
+/** Lleva a la sección "Licencia de conducción" del perfil (id="licencia" en ProfilePage) */
+const goToLicense = () => document.getElementById('licencia')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+/**
+ * Qué le falta a la licencia para que un administrador pueda aprobar la
+ * solicitud (y para aceptar servicios): número y vencimiento vigente.
+ */
+function licenseProblem(license: DriverLicense | null): string | null {
+  if (!license?.number && !license?.expirationDate) return 'registrar tu licencia de conducción (número y fecha de vencimiento)';
+  if (!license.number) return 'registrar el número de tu licencia de conducción';
+  if (!license.expirationDate) return 'registrar la fecha de vencimiento de tu licencia de conducción';
+  if (license.status === 'expired') return 'renovar tu licencia de conducción: la que registraste está vencida';
+  return null;
+}
+
+/** Aviso con lo que le falta a la licencia y un botón para ir a completarla */
+function LicenseNotice({ missing, pending }: { missing: string; pending: boolean }) {
+  return (
+    <Alert type="warning">
+      {pending ? 'Para que un administrador pueda aprobar tu solicitud' : 'Antes de enviar tu solicitud'} necesitas {missing}.{' '}
+      <button type="button" onClick={goToLicense} className="underline font-medium hover:text-yellow-200">
+        Completar licencia
+      </button>
+    </Alert>
+  );
+}
+
 /**
  * Perfil profesional del mecánico con los servicios que tiene aprobados, el
  * estado de su solicitud y el formulario para pedir el rol o sumar servicios
@@ -34,8 +61,9 @@ function RequestedServices({ services }: { services: MechanicApplicationServiceI
  */
 export default function MechanicSection() {
   const { user, refresh } = useAuth();
-  const { mechanicProfile, mechanicApplication, roles } = user!.profile;
+  const { mechanicProfile, mechanicApplication, roles, driverLicense } = user!.profile;
   const isMechanic = roles.includes('mechanic');
+  const missingLicense = licenseProblem(driverLicense);
   const serviceTypes = useServiceTypes();
   const approvedCodes: string[] = mechanicProfile?.services.map(service => service.code) ?? [];
   const pendingApplication = mechanicApplication?.status === 'pending' ? mechanicApplication : null;
@@ -150,6 +178,7 @@ export default function MechanicSection() {
         <div className="space-y-3">
           <SectionTitle color="text-green-400">{isMechanic ? 'Solicitud de más servicios' : 'Solicitud para ser mecánico'}</SectionTitle>
           <Alert type="success">Tu solicitud está en revisión desde el {formatDate(pendingApplication.createdAt, false)}. Te avisaremos cuando un administrador la revise.</Alert>
+          {missingLicense && <LicenseNotice missing={missingLicense} pending />}
           <RequestedServices services={pendingApplication.services} />
           <button onClick={() => mechanicApplicationService.cancel(pendingApplication.id).then(refresh)}
             className="text-sm text-red-400 hover:text-red-300">Cancelar solicitud</button>
@@ -172,8 +201,9 @@ export default function MechanicSection() {
           <p className="text-sm text-gray-400">
             {isMechanic
               ? 'Elige los servicios que quieres sumar y adjunta el soporte de cada uno. Un administrador los revisará.'
-              : 'Envía tu certificación y elige los servicios que puedes prestar. Un administrador revisará cada uno. Necesitas tener registrada tu licencia de conducción.'}
+              : 'Envía tu certificación y elige los servicios que puedes prestar. Un administrador revisará cada uno. Necesitas tu licencia de conducción vigente, con número y fecha de vencimiento.'}
           </p>
+          {missingLicense && <LicenseNotice missing={missingLicense} pending={false} />}
           <ServiceSelector
             serviceTypes={serviceTypes}
             selected={services}
@@ -207,7 +237,7 @@ export default function MechanicSection() {
             {isMechanic && (
               <button type="button" onClick={() => setShowForm(false)} className="flex-1 btn-outline">Cancelar</button>
             )}
-            <button type="submit" disabled={sending || !form.certification_title.trim()} className="flex-1 btn-outline disabled:opacity-50">
+            <button type="submit" disabled={sending || !form.certification_title.trim() || !!missingLicense} className="flex-1 btn-outline disabled:opacity-50">
               {sending ? 'Enviando...' : isMechanic ? 'Enviar solicitud' : 'Solicitar ser mecánico'}
             </button>
           </div>
