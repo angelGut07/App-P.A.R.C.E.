@@ -156,6 +156,23 @@ class HealthControllerTest extends TestCase
         }
     }
 
+    public function testSystemDescribesHowTheClientIpArrivesWithoutShowingAddresses(): void
+    {
+        $this->mockHealthyDatabase();
+        $_SERVER['REMOTE_ADDR'] = '10.21.157.68';
+
+        $request = $this->makeRequest('GET', headers: ['X-Forwarded-For' => '8.8.8.8, 172.70.1.1']);
+        $body = $this->responseBody($this->controller->system($request));
+
+        $proxy = $body['data']['checks']['proxy'];
+        $this->assertStringStartsWith('privada:10.0.0.0/8', $proxy['remoteAddr']);
+        $this->assertSame(2, $proxy['xForwardedForTotal']);
+        $json = json_encode($body);
+        $this->assertStringNotContainsString('10.21.157.68', $json);
+        $this->assertStringNotContainsString('8.8.8.8', $json);
+        $this->assertStringNotContainsString('172.70.1.1', $json);
+    }
+
     public function testSystemReturns503WithUnhealthyOverallStatusWhenTheDatabaseIsUnhealthy(): void
     {
         $this->mockUnhealthyDatabase();

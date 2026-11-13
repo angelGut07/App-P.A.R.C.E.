@@ -9,6 +9,7 @@ use App\Core\Database;
 use App\Core\Logger;
 use App\Core\Http\ResponseFormatter;
 use App\Core\Http\ErrorHandler;
+use App\Core\Http\ProxyDiagnostic;
 use App\Models\Auth\CaptchaService;
 
 /**
@@ -151,6 +152,11 @@ class HealthController extends Controller
             'captcha'     => (new CaptchaService())->isEnabled() ? 'configured' : 'missing',
             'maintenance' => MaintenanceController::configuredToken() !== null ? 'configured' : 'missing',
         ];
+
+        // TEMPORAL: cómo llega la IP del cliente a través del proxy, sin
+        // mostrar direcciones (ver ProxyDiagnostic). Se quita al corregir IPValidator.
+        $checks['proxy'] = ProxyDiagnostic::describe($request);
+        Logger::write('proxy', (string) json_encode($checks['proxy'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
 
         // Verificar versión de PHP
         $checks['php'] = [
