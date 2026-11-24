@@ -110,8 +110,15 @@ export async function attachServiceDocuments(applicationId: number, files: Recor
 
 export const paymentService = {
   detail: (requestId: number) => api.get<{ payment: PaymentDetail }>(`/service-requests/${requestId}/payment`),
-  pay: (requestId: number, method: PaymentMethod, extra: { card_last4?: string; pse_bank?: string } = {}) =>
-    api.post<{ payment: PaymentDetail }>(`/service-requests/${requestId}/payment`, { method, ...extra }),
+  /** Efectivo: queda pendiente hasta que el mecánico confirme. */
+  payCash: (requestId: number) =>
+    api.post<{ payment: PaymentDetail }>(`/service-requests/${requestId}/payment`, { method: 'cash' }),
+  /** Tarjeta o PSE: devuelve el link de Mercado Pago (checkoutUrl). */
+  checkout: (requestId: number, method: Exclude<PaymentMethod, 'cash'>) =>
+    api.post<{ checkoutUrl: string; payment: PaymentDetail }>(`/service-requests/${requestId}/payment/checkout`, { method }),
+  /** Al volver de Mercado Pago: el servidor consulta el pago real en la API. */
+  verify: (requestId: number, paymentId: string) =>
+    api.post<{ payment: PaymentDetail }>(`/service-requests/${requestId}/payment/verify`, { payment_id: paymentId }),
   confirm: (requestId: number) => api.post<{ payment: PaymentDetail }>(`/service-requests/${requestId}/payment/confirm`),
   reject: (requestId: number) => api.post<{ payment: PaymentDetail }>(`/service-requests/${requestId}/payment/reject`),
   list: (filters: { status?: string; method?: string; page?: number } = {}) =>

@@ -82,7 +82,7 @@ export default function AdminPaymentsPage() {
                   <td className="p-3"><Badge className={PAYMENT_STATUS[p.status].color}>{PAYMENT_STATUS[p.status].label}</Badge></td>
                   <td className="p-3">
                     <div className="flex items-center gap-2 justify-end">
-                      {p.status === 'pending' && (
+                      {p.status === 'pending' && p.method === 'cash' && (
                         <>
                           <button onClick={() => review(p, true)} className="text-green-400 hover:text-green-300" title="Confirmar"><CheckCircle className="w-4 h-4" /></button>
                           <button onClick={() => review(p, false)} className="text-red-400 hover:text-red-300" title="Rechazar"><XCircle className="w-4 h-4" /></button>

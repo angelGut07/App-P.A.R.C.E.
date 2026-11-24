@@ -96,7 +96,7 @@ export default function MechanicPaymentDashboard() {
                     </div>
                     <div className="flex flex-col items-end gap-2">
                       <span className={`px-2 py-0.5 rounded-full text-xs border ${PAYMENT_STATUS[p.status].color}`}>{PAYMENT_STATUS[p.status].label}</span>
-                      {p.status === 'pending' && (
+                      {p.status === 'pending' && p.method === 'cash' && (
                         <div className="flex gap-2">
                           <button disabled={busy !== null} onClick={() => review(p, true)}
                             className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm disabled:opacity-50">

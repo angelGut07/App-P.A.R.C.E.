@@ -352,6 +352,10 @@ export interface Payment {
   reviewedAt: string | null;
   reviewerFirstName?: string | null;
   reviewerLastName?: string | null;
+  /** Mercado Pago (solo tarjeta y PSE) */
+  mpPreferenceId?: string | null;
+  mpPaymentId?: string | null;
+  mpStatusDetail?: string | null;
   createdAt: string;
 }
 
