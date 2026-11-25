@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Core\Controller;
+use App\Core\DomainException;
 use App\Core\Request;
 use App\Core\Response;
 use App\Models\Payment\PaymentService;
@@ -15,6 +16,10 @@ use App\Core\Http\ErrorHandler;
  *
  * Desglose de cobro y comprobante (RF 5.4), pago del cliente, confirmación
  * del mecánico o administrador y listados por rol.
+ *
+ * Efectivo: POST /payment. Tarjeta y PSE: POST /payment/checkout devuelve el
+ * link de Mercado Pago; al volver, POST /payment/verify consulta el pago en
+ * la API. Mercado Pago también avisa por POST /api/payments/webhook.
  */
 class PaymentController extends Controller
 {
@@ -42,8 +47,8 @@ class PaymentController extends Controller
     }
 
     /**
-     * POST /api/service-requests/{id}/payment (cliente)
-     * Body: method (cash|card|pse), card_last4 (si es tarjeta), pse_bank (si es PSE)
+     * POST /api/service-requests/{id}/payment (cliente): pago en efectivo.
+     * Body: method = cash
      */
     public function store(Request $request, int $id): Response
     {
@@ -54,32 +59,109 @@ class PaymentController extends Controller
             }
 
             $method = $request->input('method');
-            $cardLast4 = $request->input('card_last4');
-            $pseBank = $request->input('pse_bank');
-
-            $errors = [];
-            if (!in_array($method, PaymentService::METHODS, true)) {
-                $errors['method'] = 'Método de pago inválido. Valores válidos: ' . implode(', ', PaymentService::METHODS);
+            if (in_array($method, PaymentService::ONLINE_METHODS, true)) {
+                return ResponseFormatter::validationError([
+                    'method' => 'Tarjeta y PSE se pagan en Mercado Pago: usa /payment/checkout',
+                ]);
             }
-            if ($method === 'card' && !preg_match('/^\d{4}$/', (string)$cardLast4)) {
-                $errors['card_last4'] = 'Indica los últimos 4 dígitos de la tarjeta';
-            }
-            if ($method === 'pse' && (trim((string)$pseBank) === '' || mb_strlen((string)$pseBank) > 60)) {
-                $errors['pse_bank'] = 'Selecciona el banco para PSE';
-            }
-            if ($errors !== []) {
-                return ResponseFormatter::validationError($errors);
+            if ($method !== 'cash') {
+                return ResponseFormatter::validationError([
+                    'method' => 'Método de pago inválido. Valores válidos: ' . implode(', ', PaymentService::METHODS),
+                ]);
             }
 
-            $payment = $this->payments->pay(
-                $id,
-                (int)$request->getAttribute('userId'),
-                $method,
-                $method === 'card' ? (string)$cardLast4 : null,
-                $method === 'pse' ? trim((string)$pseBank) : null
-            );
+            $payment = $this->payments->payCash($id, (int)$request->getAttribute('userId'));
 
-            return ResponseFormatter::success(['payment' => $payment], 'Pago registrado correctamente', 201);
+            return ResponseFormatter::success(['payment' => $payment], 'Pago en efectivo registrado', 201);
+        } catch (\Exception $e) {
+            return ErrorHandler::handleException($e);
+        }
+    }
+
+    /**
+     * POST /api/service-requests/{id}/payment/checkout (cliente)
+     * Body: method (card|pse). Responde checkout_url para redirigir a Mercado Pago.
+     */
+    public function checkout(Request $request, int $id): Response
+    {
+        try {
+            $json = RequestValidator::parseJsonBody($request);
+            if (!$json['valid']) {
+                return ResponseFormatter::error($json['error'], null, $json['statusCode']);
+            }
+
+            $method = $request->input('method');
+            if (!in_array($method, PaymentService::ONLINE_METHODS, true)) {
+                return ResponseFormatter::validationError([
+                    'method' => 'Método inválido. Valores válidos: ' . implode(', ', PaymentService::ONLINE_METHODS),
+                ]);
+            }
+
+            $result = $this->payments->startCheckout($id, (int)$request->getAttribute('userId'), $method);
+
+            return ResponseFormatter::success($result, 'Link de pago creado', 201);
+        } catch (\Exception $e) {
+            return ErrorHandler::handleException($e);
+        }
+    }
+
+    /**
+     * POST /api/service-requests/{id}/payment/verify (cliente)
+     * Body: payment_id (el que Mercado Pago agregó a la URL de retorno)
+     */
+    public function verify(Request $request, int $id): Response
+    {
+        try {
+            $json = RequestValidator::parseJsonBody($request);
+            if (!$json['valid']) {
+                return ResponseFormatter::error($json['error'], null, $json['statusCode']);
+            }
+
+            $mpPaymentId = (string)$request->input('payment_id', '');
+            if (!preg_match('/^\d{1,30}$/', $mpPaymentId)) {
+                return ResponseFormatter::validationError(['payment_id' => 'Identificador de pago inválido']);
+            }
+
+            $payment = $this->payments->verifyReturn($id, (int)$request->getAttribute('userId'), $mpPaymentId);
+
+            return ResponseFormatter::success(['payment' => $payment], 'Pago verificado', 200);
+        } catch (\Exception $e) {
+            return ErrorHandler::handleException($e);
+        }
+    }
+
+    /**
+     * POST /api/payments/webhook (público: lo llama Mercado Pago, sin sesión)
+     *
+     * Del aviso solo se toma el ID del pago; el estado se consulta en la API,
+     * así que un aviso falso no puede marcar nada como pagado. Responde 200
+     * a lo que no es de P.A.R.C.E (para que Mercado Pago no reintente) y 5xx
+     * si Mercado Pago no respondió (para que sí reintente más tarde).
+     */
+    public function webhook(Request $request): Response
+    {
+        try {
+            $data = $request->input('data');
+            // Formato Webhooks: {"type":"payment","data":{"id":"123"}} (también llega en la URL como
+            // ?type=payment&data.id=123, que PHP convierte en data_id). Formato IPN: ?topic=payment&id=123
+            $type = (string)($request->input('type') ?? $request->query('type') ?? $request->query('topic') ?? '');
+            $mpPaymentId = (string)((is_array($data) ? ($data['id'] ?? null) : null)
+                ?? $request->query('data_id') ?? $request->query('id') ?? '');
+
+            if ($type !== 'payment' || !preg_match('/^\d{1,30}$/', $mpPaymentId)) {
+                return ResponseFormatter::success(null, 'Aviso ignorado', 200);
+            }
+
+            $this->payments->handleNotification($mpPaymentId);
+
+            return ResponseFormatter::success(null, 'Aviso procesado', 200);
+        } catch (DomainException $e) {
+            // 404/409: el pago no existe o no es nuestro; reintentar no lo cambia
+            if (in_array($e->getStatusCode(), [400, 404, 409], true)) {
+                error_log('Webhook Mercado Pago ignorado: ' . $e->getMessage());
+                return ResponseFormatter::success(null, 'Aviso ignorado', 200);
+            }
+            return ErrorHandler::handleException($e);
         } catch (\Exception $e) {
             return ErrorHandler::handleException($e);
         }

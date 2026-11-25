@@ -91,8 +91,12 @@ $router->get('/api/service-requests/{id}/evidences', [ServiceRequestController::
 $router->get('/api/payments', [PaymentController::class, 'index'])->middleware($auth);
 $router->get('/api/service-requests/{id}/payment', [PaymentController::class, 'show'])->middleware($auth);
 $router->post('/api/service-requests/{id}/payment', [PaymentController::class, 'store'])->middleware($customer);
+$router->post('/api/service-requests/{id}/payment/checkout', [PaymentController::class, 'checkout'])->middleware($customer);
+$router->post('/api/service-requests/{id}/payment/verify', [PaymentController::class, 'verify'])->middleware($customer);
 $router->post('/api/service-requests/{id}/payment/confirm', [PaymentController::class, 'confirm'])->middleware($staff);
 $router->post('/api/service-requests/{id}/payment/reject', [PaymentController::class, 'reject'])->middleware($staff);
+// Aviso de Mercado Pago: sin sesión; el pago se confirma consultando la API, no el aviso
+$router->post('/api/payments/webhook', [PaymentController::class, 'webhook']);
 
 // ── Solicitudes de servicio: mecánico ───────────────────────────────────────
 // '/available' y '/stats' se registran antes de '/{id}': el router compara en

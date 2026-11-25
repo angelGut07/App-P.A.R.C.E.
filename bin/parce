@@ -12,6 +12,7 @@
  *   php bin/parce expire-requests [min]   Expira solicitudes pendientes sin atender (por defecto 30 min)
  *   php bin/parce cleanup-sessions        Borra sesiones vencidas, intentos fallidos viejos y enlaces de recuperación vencidos
  *   php bin/parce cleanup-logs [días]     Borra logs más antiguos que N días (por defecto 30)
+ *   php bin/parce mp-check                Verifica el Access Token de Mercado Pago (MP_ACCESS_TOKEN)
  */
 
 define('BASE_PATH', dirname(__DIR__));
@@ -22,6 +23,7 @@ use App\Core\Database;
 use App\Core\EnvLoader;
 use App\Core\MigrationRunner;
 use App\Models\Maintenance\MaintenanceService;
+use App\Models\Payment\MercadoPagoClient;
 
 EnvLoader::load(EnvLoader::path(BASE_PATH));
 
@@ -100,9 +102,15 @@ try {
             $report("{$deleted} archivo(s) de log eliminado(s)");
             break;
 
+        case 'mp-check':
+            // No muestra el token: solo confirma a qué cuenta pertenece.
+            $me = (new MercadoPagoClient())->whoAmI();
+            $report("Mercado Pago OK: cuenta {$me['id']} ({$me['nickname']}), país {$me['site_id']}");
+            break;
+
         default:
             $lines = file(__FILE__);
-            echo implode('', array_slice($lines, 3, 11));
+            echo implode('', array_slice($lines, 3, 12));
     }
 } catch (Throwable $e) {
     fwrite(STDERR, 'Error: ' . $e->getMessage() . PHP_EOL);

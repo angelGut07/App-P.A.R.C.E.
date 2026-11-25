@@ -1,45 +1,69 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { CreditCard, DollarSign, Building2, Check, ChevronLeft, Shield, Wrench, Package, AlertCircle, Receipt, Star } from 'lucide-react';
+import { CreditCard, DollarSign, Building2, Check, X, Clock, ChevronLeft, Shield, Wrench, Package, AlertCircle, Receipt, Star, ExternalLink, RotateCcw } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import { useAuth } from '../../controllers/AuthContext';
 import { errorMessage, paymentService, requestService } from '../../services';
-import type { PaymentDetail, PaymentMethod } from '@/models';
+import type { Payment, PaymentDetail, PaymentMethod } from '@/models';
 import { PAYMENT_METHOD, PAYMENT_STATUS, formatCOP } from '../format';
 
-const BANKS = [
-  'Bancolombia', 'Banco de Bogotá', 'Davivienda', 'BBVA', 'Banco Popular',
-  'Banco Caja Social', 'Colpatria', 'Occidente', 'AV Villas', 'Nequi',
+const METHODS: { id: PaymentMethod; title: string; description: string; icon: React.ElementType }[] = [
+  { id: 'cash', title: 'Efectivo', description: 'Pagas al mecánico y él confirma que recibió el dinero. Funciona sin internet.', icon: DollarSign },
+  { id: 'card', title: 'Tarjeta', description: 'Débito o crédito, en Mercado Pago', icon: CreditCard },
+  { id: 'pse', title: 'PSE', description: 'Transferencia desde tu banco, en Mercado Pago', icon: Building2 },
 ];
 
-const METHODS: { id: PaymentMethod; title: string; description: string; icon: React.ElementType }[] = [
-  { id: 'cash', title: 'Efectivo', description: 'Pagas al mecánico y él confirma que recibió el dinero', icon: DollarSign },
-  { id: 'card', title: 'Tarjeta', description: 'Débito o crédito', icon: CreditCard },
-  { id: 'pse', title: 'PSE', description: 'Transferencia desde tu banco', icon: Building2 },
-];
+/** Motivos de rechazo más comunes de Mercado Pago, en palabras del cliente. */
+const REJECTION_REASONS: Record<string, string> = {
+  cc_rejected_insufficient_amount: 'La tarjeta no tiene fondos suficientes.',
+  cc_rejected_bad_filled_security_code: 'El código de seguridad es incorrecto.',
+  cc_rejected_bad_filled_date: 'La fecha de vencimiento es incorrecta.',
+  cc_rejected_bad_filled_card_number: 'El número de la tarjeta es incorrecto.',
+  cc_rejected_bad_filled_other: 'Algún dato de la tarjeta es incorrecto.',
+  cc_rejected_call_for_authorize: 'Tu banco pide que autorices el pago. Llámalo o usa otro medio.',
+  cc_rejected_card_disabled: 'La tarjeta está desactivada.',
+  cc_rejected_duplicated_payment: 'Ya hiciste un pago por este mismo valor hace poco.',
+  cc_rejected_high_risk: 'El pago fue rechazado por seguridad. Prueba con otro medio.',
+  cc_rejected_max_attempts: 'Superaste el número de intentos permitidos con esta tarjeta.',
+};
 
 type Step = 1 | 2 | 3;
 
+/** Un pago en línea que el cliente abandonó (sin pago en Mercado Pago) se puede reintentar. */
+const isAbandonedOnline = (p: Payment | null) =>
+  !!p && p.status === 'pending' && p.method !== 'cash' && !p.mpPaymentId;
+
+/** Paso que corresponde según el pago guardado. */
+const stepFor = (p: Payment | null): Step => (!p || isAbandonedOnline(p) ? 1 : 3);
+
 /**
  * Pago de un servicio completado (?request=ID; si no viene, el último
- * servicio completado sin pagar). La pasarela es simulada: no se hace un
- * cargo real ni se guardan datos de la tarjeta, solo sus últimos 4 dígitos.
+ * servicio completado sin pagar).
+ *
+ * - Efectivo: se registra pendiente y el mecánico lo confirma.
+ * - Tarjeta y PSE: Mercado Pago Checkout Pro (redirección, sin SDK ni
+ *   formularios de tarjeta en esta página: menos datos con señal débil).
+ *   Al volver, Mercado Pago agrega ?payment_id=... a la URL y el servidor
+ *   consulta el estado real en su API: el "status" de la URL no se usa.
  */
 export default function PaymentPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [detail, setDetail] = useState<PaymentDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [suggestCash, setSuggestCash] = useState(false);
   const [step, setStep] = useState<Step>(1);
   const [method, setMethod] = useState<PaymentMethod | null>(null);
-  const [card, setCard] = useState({ number: '', name: '', expiry: '', cvv: '' });
-  const [pse, setPse] = useState({ bank: '', personType: 'natural', document: '' });
   const [processing, setProcessing] = useState(false);
+  // En desarrollo React ejecuta los efectos dos veces: evita verificar dos veces el mismo pago
+  const verifiedRef = useRef<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -52,37 +76,87 @@ export default function PaymentPage() {
         setLoading(false);
         return;
       }
+
+      // ¿Volvemos de Mercado Pago? Si el cliente canceló, llega payment_id=null
+      const mpPaymentId = searchParams.get('payment_id');
+      const returnedFromMp = searchParams.has('collection_status') || searchParams.has('payment_id');
+
+      if (mpPaymentId && /^\d+$/.test(mpPaymentId) && verifiedRef.current !== mpPaymentId) {
+        verifiedRef.current = mpPaymentId;
+        setVerifying(true);
+        const res = await paymentService.verify(requestId, mpPaymentId);
+        setVerifying(false);
+        // Limpia la URL: recargar la página no vuelve a verificar
+        setSearchParams({ request: String(requestId) }, { replace: true });
+        if (res.success && res.data) {
+          setDetail(res.data.payment);
+          setStep(stepFor(res.data.payment.payment));
+          setLoading(false);
+          return;
+        }
+        setError(errorMessage(res, 'No pudimos confirmar tu pago. Si se cobró, se reflejará en unos minutos.'));
+      } else if (returnedFromMp && !mpPaymentId?.match(/^\d+$/)) {
+        setSearchParams({ request: String(requestId) }, { replace: true });
+        setNotice('No se completó el pago en Mercado Pago. Puedes intentarlo de nuevo o pagar en efectivo.');
+      }
+
       const res = await paymentService.detail(requestId);
       if (res.success && res.data) {
         setDetail(res.data.payment);
-        if (res.data.payment.payment) setStep(3);
+        setStep(stepFor(res.data.payment.payment));
       } else {
         setError(errorMessage(res, 'No se pudo cargar el detalle del pago'));
       }
       setLoading(false);
     })();
-  }, [searchParams]);
+    // Solo al montar: después la URL la cambiamos nosotros (setSearchParams)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const cardDigits = card.number.replace(/\D/g, '');
-  const cardValid = cardDigits.length >= 15 && card.name.trim().length > 2 && /^\d{2}\/\d{2}$/.test(card.expiry) && /^\d{3,4}$/.test(card.cvv);
-  const pseValid = pse.bank !== '' && /^\d{6,12}$/.test(pse.document);
-  const canPay = method === 'cash' || (method === 'card' && cardValid) || (method === 'pse' && pseValid);
+  const chooseMethod = (m: PaymentMethod) => {
+    setMethod(m);
+    setError('');
+    setSuggestCash(false);
+  };
 
   const handlePay = async () => {
     if (!detail || !method) return;
+    const requestId = detail.serviceRequest.id;
     setProcessing(true);
     setError('');
-    const res = await paymentService.pay(detail.serviceRequest.id, method, {
-      card_last4: method === 'card' ? cardDigits.slice(-4) : undefined,
-      pse_bank: method === 'pse' ? pse.bank : undefined,
-    });
-    setProcessing(false);
-    if (res.success && res.data) {
-      setDetail(res.data.payment);
-      setStep(3);
-    } else {
-      setError(errorMessage(res, 'No se pudo registrar el pago'));
+    setNotice('');
+    setSuggestCash(false);
+
+    if (method === 'cash') {
+      const res = await paymentService.payCash(requestId);
+      setProcessing(false);
+      if (res.success && res.data) {
+        setDetail(res.data.payment);
+        setStep(3);
+      } else {
+        setError(errorMessage(res, 'No se pudo registrar el pago'));
+      }
+      return;
     }
+
+    const res = await paymentService.checkout(requestId, method);
+    if (res.success && res.data?.checkoutUrl) {
+      // Redirección completa: la pasarela es una página de Mercado Pago
+      window.location.href = res.data.checkoutUrl;
+      return; // "processing" se queda activo mientras el navegador cambia de página
+    }
+
+    // Sin señal o Mercado Pago caído: el efectivo siempre funciona
+    setProcessing(false);
+    setError(errorMessage(res, 'No pudimos abrir Mercado Pago.'));
+    setSuggestCash(true);
+  };
+
+  const retry = () => {
+    setMethod(null);
+    setError('');
+    setNotice('');
+    setStep(1);
   };
 
   const shell = (content: React.ReactNode) => (
@@ -96,6 +170,16 @@ export default function PaymentPage() {
       </main>
     </div>
   );
+
+  if (verifying) {
+    return shell(
+      <div className="card p-10 text-center space-y-3">
+        <Clock className="w-12 h-12 text-gold-400 mx-auto animate-pulse" />
+        <h2 className="text-xl font-bold text-white">Confirmando tu pago…</h2>
+        <p className="text-gray-400 text-sm">Estamos consultando el resultado con Mercado Pago. Puede tardar unos segundos si la señal es débil; no cierres esta página.</p>
+      </div>
+    );
+  }
 
   if (loading) return shell(<p className="text-gray-400">Cargando...</p>);
 
@@ -111,6 +195,20 @@ export default function PaymentPage() {
   }
 
   const { serviceRequest: sr, payment } = detail;
+
+  const errorBox = (error || notice) && (
+    <div className={`flex items-start gap-2 p-3 rounded-xl text-sm border ${error ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'}`}>
+      <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+      <div className="space-y-2">
+        <p>{error || notice}</p>
+        {suggestCash && (
+          <button onClick={() => { chooseMethod('cash'); setStep(2); }} className="underline font-semibold">
+            Pagar en efectivo al mecánico
+          </button>
+        )}
+      </div>
+    </div>
+  );
 
   const summary = (
     <div className="card p-6 space-y-4">
@@ -143,6 +241,8 @@ export default function PaymentPage() {
     </div>
   );
 
+  const rejectionReason = payment?.mpStatusDetail ? REJECTION_REASONS[payment.mpStatusDetail] : undefined;
+
   return shell(
     <>
       <div>
@@ -155,9 +255,10 @@ export default function PaymentPage() {
       {step === 1 && (
         <div className="card p-6 space-y-4">
           <h3 className="text-lg font-bold text-white">Método de pago</h3>
+          {errorBox}
           <div className="grid sm:grid-cols-3 gap-3">
             {METHODS.map(m => (
-              <button key={m.id} onClick={() => setMethod(m.id)}
+              <button key={m.id} onClick={() => chooseMethod(m.id)}
                 className={`p-4 rounded-xl border-2 text-left transition-all ${method === m.id ? 'border-gold-500 bg-gold-500/10' : 'border-anthracite-700 bg-dark-800 hover:border-gold-500/40'}`}>
                 <m.icon className={`w-6 h-6 mb-2 ${method === m.id ? 'text-gold-400' : 'text-gray-400'}`} />
                 <p className="text-white font-semibold">{m.title}</p>
@@ -175,84 +276,76 @@ export default function PaymentPage() {
             <ChevronLeft className="w-4 h-4" /> Cambiar método
           </button>
 
-          {method === 'cash' && (
+          {method === 'cash' ? (
             <div className="p-4 rounded-xl bg-dark-800 border border-anthracite-700 text-sm text-gray-300 space-y-2">
               <p className="text-white font-semibold">Pago en efectivo</p>
               <p>Entrega <span className="text-gold-400 font-bold">{formatCOP(detail.total)}</span> al mecánico. El pago quedará pendiente hasta que él confirme que lo recibió.</p>
             </div>
-          )}
-
-          {method === 'card' && (
-            <div className="space-y-3">
-              <input className="input-field" placeholder="Número de la tarjeta" inputMode="numeric"
-                value={card.number} onChange={e => setCard({ ...card, number: e.target.value.replace(/\D/g, '').slice(0, 16).replace(/(.{4})/g, '$1 ').trim() })} />
-              <input className="input-field" placeholder="Nombre en la tarjeta"
-                value={card.name} onChange={e => setCard({ ...card, name: e.target.value })} />
-              <div className="grid grid-cols-2 gap-3">
-                <input className="input-field" placeholder="MM/AA" inputMode="numeric"
-                  value={card.expiry} onChange={e => setCard({ ...card, expiry: e.target.value.replace(/\D/g, '').slice(0, 4).replace(/(.{2})(.+)/, '$1/$2') })} />
-                <input className="input-field" placeholder="CVV" inputMode="numeric" type="password"
-                  value={card.cvv} onChange={e => setCard({ ...card, cvv: e.target.value.replace(/\D/g, '').slice(0, 4) })} />
-              </div>
+          ) : (
+            <div className="p-4 rounded-xl bg-dark-800 border border-anthracite-700 text-sm text-gray-300 space-y-2">
+              <p className="text-white font-semibold">Pago con {method === 'card' ? 'tarjeta' : 'PSE'} en Mercado Pago</p>
+              <p>Te llevaremos a la página segura de Mercado Pago para pagar <span className="text-gold-400 font-bold">{formatCOP(detail.total)}</span>. Al terminar, volverás aquí automáticamente.</p>
+              <p className="flex items-center gap-2 text-xs text-gray-500">
+                <Shield className="w-4 h-4" /> P.A.R.C.E nunca ve ni guarda los datos de tu tarjeta o de tu banco.
+              </p>
             </div>
           )}
 
-          {method === 'pse' && (
-            <div className="space-y-3">
-              <select className="input-field" value={pse.bank} onChange={e => setPse({ ...pse, bank: e.target.value })}>
-                <option value="">Selecciona tu banco</option>
-                {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
-              </select>
-              <select className="input-field" value={pse.personType} onChange={e => setPse({ ...pse, personType: e.target.value })}>
-                <option value="natural">Persona natural</option>
-                <option value="juridica">Persona jurídica</option>
-              </select>
-              <input className="input-field" placeholder="Número de documento" inputMode="numeric"
-                value={pse.document} onChange={e => setPse({ ...pse, document: e.target.value.replace(/\D/g, '').slice(0, 12) })} />
-            </div>
-          )}
+          {errorBox}
 
-          {method !== 'cash' && (
-            <p className="flex items-center gap-2 text-xs text-gray-500">
-              <Shield className="w-4 h-4" /> Pasarela de pruebas: no se realiza ningún cargo real y no guardamos los datos de tu tarjeta.
-            </p>
-          )}
-
-          {error && (
-            <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">
-              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" /> {error}
-            </div>
-          )}
-
-          <button disabled={!canPay || processing} onClick={handlePay} className="w-full btn-primary disabled:opacity-40">
-            {processing ? 'Procesando...' : method === 'cash' ? 'Confirmar pago en efectivo' : `Pagar ${formatCOP(detail.total)}`}
+          <button disabled={processing} onClick={handlePay} className="w-full btn-primary disabled:opacity-40 flex items-center justify-center gap-2">
+            {processing
+              ? (method === 'cash' ? 'Registrando…' : 'Abriendo Mercado Pago…')
+              : method === 'cash'
+                ? 'Confirmar pago en efectivo'
+                : <>Ir a Mercado Pago <ExternalLink className="w-4 h-4" /></>}
           </button>
         </div>
       )}
 
       {step === 3 && payment && (
         <div className="card p-6 text-center space-y-4">
-          <div className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center ${payment.status === 'rejected' ? 'bg-red-500/20' : 'bg-green-500/20'}`}>
-            <Check className={`w-8 h-8 ${payment.status === 'rejected' ? 'text-red-400' : 'text-green-400'}`} />
+          {errorBox}
+          <div className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center ${payment.status === 'rejected' ? 'bg-red-500/20' : payment.status === 'pending' ? 'bg-yellow-500/20' : 'bg-green-500/20'}`}>
+            {payment.status === 'rejected'
+              ? <X className="w-8 h-8 text-red-400" />
+              : payment.status === 'pending'
+                ? <Clock className="w-8 h-8 text-yellow-400" />
+                : <Check className="w-8 h-8 text-green-400" />}
           </div>
           <div>
             <h3 className="text-xl font-bold text-white">
-              {payment.status === 'confirmed' ? '¡Pago confirmado!' : payment.status === 'pending' ? 'Pago registrado' : 'Pago rechazado'}
+              {payment.status === 'confirmed' ? '¡Pago confirmado!' : payment.status === 'pending' ? 'Pago pendiente' : 'Pago rechazado'}
             </h3>
             <p className="text-gray-400 text-sm mt-1">
-              {PAYMENT_METHOD[payment.method]} · Recibo {payment.receiptNumber} ·{' '}
+              {PAYMENT_METHOD[payment.method]}{payment.cardLast4 ? ` •••• ${payment.cardLast4}` : ''} · Recibo {payment.receiptNumber} ·{' '}
               <span className={`px-2 py-0.5 rounded-full border text-xs ${PAYMENT_STATUS[payment.status].color}`}>{PAYMENT_STATUS[payment.status].label}</span>
             </p>
-            {payment.status === 'pending' && <p className="text-gray-500 text-xs mt-2">El mecánico confirmará cuando reciba el efectivo.</p>}
+            {payment.status === 'pending' && payment.method === 'cash' && (
+              <p className="text-gray-500 text-xs mt-2">El mecánico confirmará cuando reciba el efectivo.</p>
+            )}
+            {payment.status === 'pending' && payment.method !== 'cash' && (
+              <p className="text-gray-500 text-xs mt-2">Mercado Pago está procesando el pago. Te avisaremos cuando se confirme; puedes recargar esta página en unos minutos.</p>
+            )}
+            {payment.status === 'rejected' && (
+              <p className="text-gray-400 text-sm mt-2">{rejectionReason ?? 'El pago no se aprobó.'} No se te cobró nada.</p>
+            )}
           </div>
-          <div className="grid sm:grid-cols-2 gap-3">
-            <button onClick={() => navigate(`/payment/receipt?request=${sr.id}`)} className="btn-outline flex items-center justify-center gap-2">
-              <Receipt className="w-4 h-4" /> Ver comprobante
+
+          {payment.status === 'rejected' ? (
+            <button onClick={retry} className="btn-primary w-full flex items-center justify-center gap-2">
+              <RotateCcw className="w-4 h-4" /> Intentar de nuevo o pagar en efectivo
             </button>
-            <button onClick={() => navigate(`/survey?request=${sr.id}`)} className="btn-primary flex items-center justify-center gap-2">
-              <Star className="w-4 h-4" /> Calificar servicio
-            </button>
-          </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-3">
+              <button onClick={() => navigate(`/payment/receipt?request=${sr.id}`)} className="btn-outline flex items-center justify-center gap-2">
+                <Receipt className="w-4 h-4" /> Ver comprobante
+              </button>
+              <button onClick={() => navigate(`/survey?request=${sr.id}`)} className="btn-primary flex items-center justify-center gap-2">
+                <Star className="w-4 h-4" /> Calificar servicio
+              </button>
+            </div>
+          )}
         </div>
       )}
     </>
